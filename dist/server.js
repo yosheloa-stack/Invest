@@ -1,0 +1,369 @@
+import "./network.js";
+import express from "express";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { dashboardAuth } from "./auth.js";
+import { createServer } from "node:http";
+import { WebSocketServer, WebSocket } from "ws";
+import { config } from "./config.js";
+import { log } from "./log.js";
+import { MarketData, freezeMarketState } from "./market.js";
+import { Store } from "./store.js";
+import { NewsIntelligenceEngine } from "./news.js";
+import { ModelRegistry } from "./models.js";
+import { buildFeatures } from "./features.js";
+import { evaluate, advanceSignal } from "./signals.js";
+import { HORIZONS, } from "./types.js";
+import { technical } from "./indicators.js";
+const store = new Store(), market = new MarketData(), news = new NewsIntelligenceEngine(store), models = new ModelRegistry();
+const app = express();
+app.disable("x-powered-by");
+app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self' ws: wss:; style-src 'self'; img-src 'self' data:; script-src 'self'; frame-ancestors 'none'");
+    next();
+});
+const auth = dashboardAuth(config.DASHBOARD_USER, config.DASHBOARD_PASSWORD, config.PUBLIC_ORIGIN);
+app.get("/healthz", (_req, res) => res.json({ status: "alive" }));
+app.use(auth.middleware);
+const server = createServer(app), wss = new WebSocketServer({ server, path: "/ws", maxPayload: 1024,
+    verifyClient: ({ req }) => auth.authorized(req) && auth.originAllowed(req)
+});
+let initialized = false, busy = false, stopping = false, lastBucket = -1, stats = null, newsList = [], newsCategories = [], recent = [], dbError = null;
+const features = new Map(), decisions = new Map(), active = new Map(), cooldowns = new Map();
+let candleQueue = Promise.resolve();
+market.on("candles", (symbol, tf, cs) => {
+    candleQueue = candleQueue
+        .then(() => store.candles(symbol, tf, cs))
+        .catch((e) => {
+        store.healthy = false;
+        dbError = "FALHA DE PERSISTÊNCIA";
+        log.error({ err: e }, "candles persist");
+    });
+});
+function view() {
+    const now = market.rest.now();
+    return {
+        time: now,
+        mode: "PAPER",
+        sniper: config.SNIPER,
+        database: store.healthy ? "OK" : dbError || "INICIALIZANDO",
+        newsStatus: news.status,
+        newsCapabilities: {
+            semanticDedup: config.EMBEDDING_MODEL ? "CONFIGURADA" : "NÃO CONFIGURADA",
+            classification: news.configured ? "CONFIGURADA" : "NÃO CONFIGURADA",
+        },
+        newsLastSuccess: news.lastSuccess,
+        models: models.summary(),
+        modelErrors: models.errors,
+        metrics: stats,
+        news: newsList,
+        newsCategories,
+        signals: recent,
+        assets: [...market.states.values()].map((s) => {
+            const reasons = market.reasons(s);
+            if (!store.healthy)
+                reasons.push("BANCO INDISPONÍVEL");
+            const f = features.get(s.symbol + ":5"), cs = s.candles["1m"], price = s.trade?.p ?? null, first = cs[Math.max(0, cs.length - 61)], change = price && first ? price / first.c - 1 : null;
+            return {
+                symbol: s.symbol,
+                price,
+                change,
+                changeLabel: "últimos 60 candles 1m",
+                feed: reasons.length ? "ANÁLISE INDISPONÍVEL" : "CONECTADO",
+                reasons,
+                eventTime: s.trade?.t ?? null,
+                quote: s.quote ?? null,
+                chart: cs.slice(-60).map((c) => ({ t: c.end, p: c.c })),
+                indicators: f?.indicators ?? null,
+                features: f?.details ?? null,
+                groups: f?.groups ?? null,
+                forecasts: HORIZONS.map((h) => {
+                    const d = decisions.get(s.symbol)?.find((x) => x.horizon === h);
+                    if (reasons.length)
+                        return {
+                            horizon: h,
+                            state: "ANÁLISE INDISPONÍVEL",
+                            reason: reasons.join("; "),
+                            probability: null,
+                            favorable: [],
+                            contrary: [],
+                        };
+                    if (d?.signal) {
+                        const signal = active.get(d.signal.id) ||
+                            recent.find((x) => x.id === d.signal.id) ||
+                            d.signal;
+                        if (now > signal.expires || signal.status !== "PENDING")
+                            return {
+                                ...d,
+                                state: "SEM ENTRADA",
+                                reason: `ÚLTIMO SINAL: ${signal.status}`,
+                                signal,
+                            };
+                        return { ...d, signal };
+                    }
+                    return (d ?? {
+                        horizon: h,
+                        state: "ANÁLISE INDISPONÍVEL",
+                        reason: "INICIALIZANDO ANÁLISE",
+                        probability: null,
+                        favorable: [],
+                        contrary: [],
+                    });
+                }),
+            };
+        }),
+    };
+}
+app.get("/api/health", (_req, res) => {
+    const ready = initialized &&
+        store.healthy &&
+        [...market.states.values()].every((s) => !market.reasons(s).length);
+    res.status(ready ? 200 : 503).json({
+        status: ready ? "ready" : "degraded",
+        database: store.healthy,
+        feeds: [...market.states.values()].map((s) => ({
+            symbol: s.symbol,
+            reasons: market.reasons(s),
+        })),
+        models: models.summary(),
+        news: news.status,
+    });
+});
+let backupBusy = false;
+app.get("/api/backup", async (_req, res) => {
+    if (backupBusy || !initialized || !store.healthy) {
+        res.status(503).json({ error: "Backup indisponível; aguarde inicialização ou backup em andamento" });
+        return;
+    }
+    backupBusy = true;
+    let dir;
+    try {
+        dir = await mkdtemp(join(tmpdir(), "scanner-backup-"));
+        const file = join(dir, "scanner.sqlite");
+        await store.pool.backupTo(file);
+        res.download(file, `scanner-backup-${Date.now()}.sqlite`, () => {
+            void rm(dir, { recursive: true, force: true });
+            backupBusy = false;
+        });
+    }
+    catch (e) {
+        if (dir)
+            await rm(dir, { recursive: true, force: true });
+        backupBusy = false;
+        log.error({ err: e }, "backup");
+        if (!res.headersSent)
+            res.status(503).json({ error: "Falha ao gerar backup" });
+    }
+});
+app.get("/api/state", (_req, res) => res.json(view()));
+app.get("/api/signals", async (_req, res) => {
+    try {
+        res.json(await store.latestSignals(500));
+    }
+    catch {
+        res.status(503).json({ error: "BANCO INDISPONÍVEL" });
+    }
+});
+app.get("/api/metrics", (_req, res) => res.json(stats));
+app.get("/api/news", (_req, res) => res.json({
+    status: news.status,
+    events: newsList,
+    categories: newsCategories,
+}));
+app.get("/api/models", (_req, res) => res.json({ models: models.summary(), errors: models.errors }));
+app.use(express.static("public"));
+app.get("/", (_req, res) => res.sendFile("index.html", { root: "public" }));
+wss.on("connection", (ws, req) => {
+    ws.send(JSON.stringify(view()));
+    ws.on("error", (e) => log.warn({ err: e }, "dashboard socket"));
+});
+function broadcast() {
+    const payload = JSON.stringify(view());
+    for (const ws of wss.clients)
+        if (ws.readyState === WebSocket.OPEN) {
+            if (ws.bufferedAmount > 1000000)
+                ws.close(1013, "Cliente lento");
+            else
+                ws.send(payload);
+        }
+}
+async function initialize() {
+    await store.init();
+    log.info({ engine: "node:sqlite" }, "SQLite inicializado");
+    await models.load();
+    await news.init();
+    recent = await store.latestSignals(500);
+    for (const s of await store.activeSignals()) {
+        if (s.status === "PENDING") {
+            s.status = "INVALIDATED";
+            s.reason = "REINÍCIO DO COLETOR";
+            await store.saveSignal(s);
+        }
+        else
+            active.set(s.id, s);
+    }
+    for (const s of recent)
+        cooldowns.set(`${s.symbol}:${s.horizon}`, Math.max(cooldowns.get(`${s.symbol}:${s.horizon}`) || 0, s.t));
+    await market.start();
+    initialized = true;
+    stats = await store.stats();
+}
+async function tick() {
+    if (busy || !initialized || stopping)
+        return;
+    busy = true;
+    try {
+        const now = market.rest.now();
+        // Freeze point-in-time inputs before any await; sockets may mutate live state during I/O.
+        const cycle = [...market.states.values()].map(freezeMarketState);
+        const bucket = Math.floor(now / 60000), isNewBucket = bucket !== lastBucket;
+        const candidates = new Map();
+        if (isNewBucket && store.healthy)
+            for (const s of cycle)
+                if (!market.reasons(s).length)
+                    candidates.set(s.symbol, HORIZONS.map((h) => buildFeatures(s, h, now, news.context(s.symbol, now, h), news.ready())));
+        if (!store.healthy) {
+            await store.ping();
+            dbError = null;
+        }
+        for (const s of cycle)
+            if (!market.reasons(s).length) {
+                const i = features.get(s.symbol + ":5")?.indicators ??
+                    technical(s.candles["1m"]);
+                const volume = s.trades
+                    .filter((t) => t.t > now - 60000)
+                    .reduce((a, t) => a + t.q, 0);
+                await store.snapshot({
+                    symbol: s.symbol,
+                    t: Math.floor(now),
+                    eventT: s.trade.t,
+                    quoteT: s.quote.t,
+                    price: s.trade.p,
+                    bid: s.quote.bid,
+                    ask: s.quote.ask,
+                    volume,
+                    volatility: i.atr / s.trade.p,
+                });
+            }
+        for (const [id, sig] of active) {
+            const s = cycle.find((x) => x.symbol === sig.symbol), next = advanceSignal(sig, s?.quote, now, Boolean(s && !market.reasons(s).length && store.healthy));
+            if (JSON.stringify(sig) !== JSON.stringify(next)) {
+                await store.saveSignal(next);
+                active.set(id, next);
+                recent = [next, ...recent.filter((x) => x.id !== id)].slice(0, 500);
+            }
+            if (!["FILLED", "PENDING"].includes(next.status))
+                active.delete(id);
+        }
+        await store.settleObservations(now);
+        if (isNewBucket) {
+            lastBucket = bucket;
+            await models.load();
+            for (const s of cycle) {
+                const fs = candidates.get(s.symbol);
+                if (!fs)
+                    continue;
+                const ds = [];
+                for (const f of fs) {
+                    const h = f.horizon, key = `${s.symbol}:${h}`;
+                    features.set(key, f);
+                    await store.observation(f);
+                    let d = evaluate(f, models, news.ready(), config.SNIPER);
+                    if (d.signal) {
+                        const live = market.states.get(s.symbol);
+                        if (market.reasons(live).length ||
+                            market.rest.now() - f.t > config.STALE_MS) {
+                            d = {
+                                ...d,
+                                state: "ANÁLISE INDISPONÍVEL",
+                                reason: "FEED ALTERADO DURANTE A ANÁLISE",
+                                signal: undefined,
+                            };
+                        }
+                        else if (now - (cooldowns.get(key) || 0) < config.COOLDOWN_MS ||
+                            [...active.values()].some((x) => x.symbol === s.symbol && x.horizon === h)) {
+                            d = {
+                                ...d,
+                                state: "SEM ENTRADA",
+                                reason: "COOLDOWN / PAPER EM ANDAMENTO",
+                                signal: undefined,
+                            };
+                        }
+                        else {
+                            await store.saveSignal(d.signal, true);
+                            active.set(d.signal.id, d.signal);
+                            recent = [d.signal, ...recent].slice(0, 500);
+                            cooldowns.set(key, now);
+                        }
+                    }
+                    await store.saveDecision(f, d);
+                    ds.push(d);
+                }
+                decisions.set(s.symbol, ds);
+            }
+            stats = await store.stats();
+        }
+        broadcast();
+    }
+    catch (e) {
+        store.healthy = false;
+        dbError = "FALHA NO CICLO — ANÁLISE BLOQUEADA";
+        log.error({ err: e }, "scanner tick");
+        broadcast();
+    }
+    finally {
+        busy = false;
+    }
+}
+let newsBusy = false;
+async function newsTick() {
+    if (!initialized || newsBusy || stopping)
+        return;
+    newsBusy = true;
+    try {
+        await news.poll();
+        await news.reactions(market.rest.now());
+        newsList = await news.list();
+        newsCategories = await news.categories();
+    }
+    catch (e) {
+        news.status = "ERRO NO PROCESSAMENTO DE NOTÍCIAS";
+        log.error({ err: e }, "news tick");
+    }
+    finally {
+        newsBusy = false;
+    }
+}
+const timer = setInterval(() => void tick(), 1000), newsTimer = setInterval(() => void newsTick(), 30000);
+server.listen(config.PORT, "0.0.0.0", () => log.info({ port: config.PORT }, "dashboard iniciado"));
+void initialize()
+    .then(() => newsTick())
+    .catch((e) => {
+    dbError = "FALHA NA INICIALIZAÇÃO — CONSULTE LOGS";
+    log.fatal({ err: e }, "initialize");
+    setTimeout(() => process.exit(1), 1000);
+});
+async function shutdown() {
+    if (stopping)
+        return;
+    stopping = true;
+    clearInterval(timer);
+    clearInterval(newsTimer);
+    market.stop();
+    news.stop();
+    for (const ws of wss.clients)
+        ws.close(1001, "shutdown");
+    wss.close();
+    server.close();
+    const deadline = setTimeout(() => process.exit(1), 10000);
+    while (busy || newsBusy || backupBusy)
+        await new Promise((r) => setTimeout(r, 50));
+    await candleQueue;
+    await store.close();
+    clearTimeout(deadline);
+    process.exit(0);
+}
+process.on("SIGINT", () => void shutdown());
+process.on("SIGTERM", () => void shutdown());

@@ -1,0 +1,13 @@
+CREATE TABLE IF NOT EXISTS schema_migrations(version integer PRIMARY KEY, applied_at text NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS candles(symbol text NOT NULL, tf text NOT NULL, t INTEGER NOT NULL, body text NOT NULL, PRIMARY KEY(symbol,tf,t));
+CREATE TABLE IF NOT EXISTS snapshots(symbol text NOT NULL,t INTEGER NOT NULL,event_t INTEGER NOT NULL,price REAL NOT NULL,bid REAL NOT NULL,ask REAL NOT NULL,volume REAL NOT NULL,volatility REAL NOT NULL,quote_t INTEGER,PRIMARY KEY(symbol,t));
+CREATE INDEX IF NOT EXISTS snapshots_time ON snapshots(t);
+CREATE TABLE IF NOT EXISTS observations(id text PRIMARY KEY,symbol text NOT NULL,horizon integer NOT NULL CHECK(horizon IN(5,10,15)),t INTEGER NOT NULL,due INTEGER NOT NULL,price REAL NOT NULL,features text NOT NULL,final_price REAL,final_t INTEGER,return REAL,label integer,status text NOT NULL DEFAULT 'PENDING',decision text,UNIQUE(symbol,horizon,t));
+CREATE INDEX IF NOT EXISTS observations_pending ON observations(due) WHERE status='PENDING';
+CREATE TABLE IF NOT EXISTS signals(id text PRIMARY KEY,symbol text NOT NULL,horizon integer NOT NULL,t INTEGER NOT NULL,status text NOT NULL,body text NOT NULL);
+CREATE INDEX IF NOT EXISTS signals_time ON signals(t);
+CREATE TABLE IF NOT EXISTS news(id text PRIMARY KEY,published_at INTEGER NOT NULL,available_at INTEGER,body text NOT NULL);
+CREATE TABLE IF NOT EXISTS reactions(news_id text NOT NULL REFERENCES news(id),symbol text NOT NULL,horizon integer NOT NULL,base_t INTEGER,end_t INTEGER,return REAL,volume_ratio REAL,volatility_ratio REAL,confirmed INTEGER,status text NOT NULL,PRIMARY KEY(news_id,symbol,horizon));
+CREATE TABLE IF NOT EXISTS outbox(id text PRIMARY KEY,signal_id text NOT NULL REFERENCES signals(id),channel text NOT NULL,payload text NOT NULL,created_at text NOT NULL DEFAULT CURRENT_TIMESTAMP,delivered_at text,UNIQUE(signal_id,channel));
+INSERT INTO schema_migrations(version) VALUES(1) ON CONFLICT DO NOTHING;
+PRAGMA user_version=1;

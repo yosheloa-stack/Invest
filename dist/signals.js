@@ -1,0 +1,137 @@
+import { randomUUID } from "node:crypto";
+import { config, weights } from "./config.js";
+import { predict } from "./models.js";
+export function evaluate(f, registry, newsReady, sniper) {
+    const base = {
+        horizon: f.horizon,
+        state: "SEM ENTRADA",
+        reason: "CONFLUÊNCIA INSUFICIENTE",
+        probability: null,
+        favorable: [],
+        contrary: [],
+    };
+    try {
+        const model = registry.get(f), probs = predict(model, f), direction = probs[2] >= probs[0] ? 1 : -1, probability = direction === 1 ? probs[2] : probs[0];
+        const favorable = Object.entries(f.groups)
+            .filter(([k, v]) => v === direction && (weights[k] ?? 1) > 0)
+            .map(([k]) => k), contrary = Object.entries(f.groups)
+            .filter(([k, v]) => v === -direction && (weights[k] ?? 1) > 0)
+            .map(([k]) => k);
+        const total = Object.keys(f.groups).reduce((s, k) => s + (weights[k] ?? 1), 0), score = total
+            ? Object.entries(f.groups).reduce((s, [k, v]) => s + v * direction * (weights[k] ?? 1), 0) / total
+            : 0;
+        const d = {
+            ...base,
+            probability,
+            probabilities: probs,
+            score,
+            favorable,
+            contrary,
+        };
+        if ((config.NEWS_REQUIRED || sniper) && !newsReady)
+            return {
+                ...d,
+                state: "ANÁLISE INDISPONÍVEL",
+                reason: "NOTÍCIAS / IA NÃO CONFIGURADAS OU INDISPONÍVEIS",
+            };
+        if (Number(f.details.spreadBps) > 10)
+            return { ...d, reason: "SPREAD ELEVADO" };
+        if (Number(f.details.atrPct) > 0.02 || Number(f.details.atrPct) < 0.00005)
+            return { ...d, reason: "VOLATILIDADE ANORMAL" };
+        if (probability < config.MIN_PROBABILITY + (sniper ? 0.05 : 0) ||
+            favorable.length < config.MIN_GROUPS + (sniper ? 1 : 0))
+            return d;
+        if (contrary.length > (sniper ? 0 : 1))
+            return { ...d, reason: "EVIDÊNCIAS CONTRADITÓRIAS" };
+        if (sniper &&
+            (f.groups.volume !== direction ||
+                f.groups.mtf !== direction ||
+                Number(f.details.relativeVolume) < 1.2))
+            return { ...d, reason: "SNIPER AGUARDA VOLUME E CONTEXTO" };
+        if (f.details.importantNews && f.groups.reaction !== direction)
+            return { ...d, reason: "AGUARDANDO REAÇÃO OBSERVADA À NOTÍCIA" };
+        const tolerance = f.indicators.atr * 0.15;
+        const signal = {
+            id: randomUUID(),
+            symbol: f.symbol,
+            t: f.t,
+            horizon: f.horizon,
+            direction: direction === 1 ? "COMPRA" : "VENDA",
+            analyzedPrice: f.price,
+            entryLow: f.price - tolerance,
+            entryHigh: f.price + tolerance,
+            expires: f.t + 30000,
+            probability,
+            modelId: model.id,
+            features: f,
+            score,
+            favorable,
+            contrary,
+            status: "PENDING",
+        };
+        return {
+            ...d,
+            state: signal.direction,
+            reason: "CONFLUÊNCIA E MODELO DISPONÍVEIS",
+            signal,
+        };
+    }
+    catch (e) {
+        return {
+            ...base,
+            state: "ANÁLISE INDISPONÍVEL",
+            reason: e instanceof Error ? e.message : String(e),
+        };
+    }
+}
+export function advanceSignal(s, quote, now, healthy) {
+    const next = { ...s };
+    if (s.status === "PENDING") {
+        if (now > s.expires)
+            return { ...next, status: "EXPIRED", reason: "VALIDADE EXPIRADA" };
+        if (!healthy || !quote || now - quote.t > config.STALE_MS)
+            return { ...next, status: "INVALIDATED", reason: "FEED INDISPONÍVEL" };
+        if (quote.t <= s.t)
+            return next;
+        const entry = s.direction === "COMPRA" ? quote.ask : quote.bid;
+        if (entry < s.entryLow || entry > s.entryHigh)
+            return { ...next, status: "INVALIDATED", reason: "PREÇO FORA DA FAIXA" };
+        return {
+            ...next,
+            status: "FILLED",
+            entry,
+            entryAt: quote.t,
+            due: quote.t + s.horizon * 60000,
+        };
+    }
+    if (s.status === "FILLED" && now >= s.due) {
+        if (!healthy ||
+            !quote ||
+            quote.t < s.due ||
+            quote.t > s.due + 2000 ||
+            now - quote.t > 2000) {
+            return now > s.due + 2500
+                ? {
+                    ...next,
+                    status: "NO_DATA",
+                    reason: "SEM COTAÇÃO VÁLIDA NO VENCIMENTO",
+                }
+                : next;
+        }
+        const exit = s.direction === "COMPRA" ? quote.bid : quote.ask, ret = (exit / s.entry - 1) * (s.direction === "COMPRA" ? 1 : -1);
+        return {
+            ...next,
+            status: "SETTLED",
+            exit,
+            exitAt: quote.t,
+            return: ret,
+            result: ret > config.RETURN_THRESHOLD
+                ? "WIN"
+                : ret < -config.RETURN_THRESHOLD
+                    ? "LOSS"
+                    : "NEUTRO",
+        };
+    }
+    return next;
+}
+// External alert adapters must be explicitly configured; no outbound message is sent by this application.

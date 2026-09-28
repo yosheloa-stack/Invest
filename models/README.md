@@ -1,0 +1,1 @@
+Nenhum modelo fictício é fornecido. Treine com observações reais exportadas, revise o relatório e copie apenas BTCUSDT-5.json etc. para este diretório. O registro recarrega a cada minuto e rejeita artefatos incompatíveis, expirados ou sem validação. report.json não é modelo e deve permanecer em research/candidates.

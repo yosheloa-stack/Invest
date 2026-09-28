@@ -1,0 +1,16 @@
+node_modules/
+.env
+research/dataset.json
+research/candidates/
+models/*.json
+__pycache__/
+*.log
+
+.venv/
+
+certs/*.pem
+.env.squarecloud
+
+data/
+backups/
+*.sqlite*
