@@ -16,3 +16,6 @@ research
 data
 backups
 *.sqlite*
+
+# Skills do Claude (não fazem parte da aplicação)
+.claude
