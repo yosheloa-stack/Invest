@@ -19,7 +19,13 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { Check, ChevronDown, LineChart } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  LineChart,
+  Maximize2,
+  Minimize2,
+} from "lucide-react";
 import { api, countdown, pct, price } from "./format";
 import { liveBar, subscribe, lastServerTime } from "./live";
 import {
@@ -91,12 +97,16 @@ export default function CandleChart({
   focus,
   signals,
   head,
+  expanded = false,
+  onExpand,
 }: {
   symbol: string;
   title: string;
   focus?: Evaluation;
   signals: Signal[];
   head?: ReactNode;
+  expanded?: boolean;
+  onExpand?: () => void;
 }) {
   const theme = useTheme(),
     C = PALETTE[theme],
@@ -722,6 +732,18 @@ export default function CandleChart({
         >
           Gatilhos
         </button>
+        {onExpand && (
+          <button
+            className="tv-btn fullscreen-toggle"
+            data-fullscreen-toggle
+            aria-label={expanded ? "Sair da tela cheia" : "Tela cheia"}
+            aria-pressed={expanded}
+            onClick={onExpand}
+            title={expanded ? "Sair da tela cheia (Esc)" : "Tela cheia"}
+          >
+            {expanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+          </button>
+        )}
         <span className="tv-clock" title="Tempo até o candle atual fechar">
           {left}
         </span>

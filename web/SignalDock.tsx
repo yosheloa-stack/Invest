@@ -7,7 +7,7 @@ import {
   Check,
   X,
 } from "lucide-react";
-import { countdown, pair, pct, price } from "./format";
+import { clock, countdown, pair, pct, price } from "./format";
 import type { LabBrief, Signal } from "./types";
 import { CoinIcon } from "./Icons";
 import { SignalEvents, resultLabel, evidenceLabel } from "./signal-events";
@@ -63,7 +63,7 @@ export default function SignalDock({
     done = signals.find(
       (s) => s.status === "SETTLED" && s.exitAt && now - s.exitAt < 90000,
     ),
-    current = pending || done || running;
+    current = pending || running || done;
   useEffect(() => {
     const notices = events.current.consume(signals, now, fresh);
     if (!alerts || !notices.length) return;
@@ -79,7 +79,7 @@ export default function SignalDock({
         kind === "entry"
           ? `Válido por ${countdown(s.expires - now)}. ${evidenceLabel(s)}: ${pct(s.probability)}.`
           : kind === "filled"
-            ? `Entrada ${price(s.entry)}. Vencimento em ${countdown((s.due ?? now) - now)}.`
+            ? `Entrada ${price(s.entry)}. Saída às ${clock(s.due ?? now)} (${countdown((s.due ?? now) - now)}).`
             : kind === "result"
               ? `Paper: ${price(s.entry)} → ${price(s.exit)}. Resultado salvo no histórico.`
               : s.reason || "Entrada encerrada sem resultado válido.";
@@ -191,7 +191,8 @@ export default function SignalDock({
               {buy ? "Compra" : "Venda"} {pair(current.symbol)} em andamento
             </strong>
             <p>
-              Entrada {price(current.entry)} · agora {price(live)} ·{" "}
+              Entrada {price(current.entry)} às {clock(current.entryAt!)} ·
+              saída às {clock(current.due!)} · agora {price(live)} ·{" "}
               {ahead == null ? "—" : ahead ? "ganhando" : "perdendo"}
             </p>
           </div>

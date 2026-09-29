@@ -1,3 +1,4 @@
+import { applyPaperFeedback } from "./paper-feedback.js";
 import "./network.js";
 import express from "express";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -425,7 +426,12 @@ async function tick() {
             key = `${s.symbol}:${h}`;
           features.set(key, f);
           await store.observation(f);
-          let d = evaluate(f, models, news.ready(), config.SNIPER);
+          let d = applyPaperFeedback(
+            evaluate(f, models, news.ready(), config.SNIPER),
+            recent,
+            market.rest.now(),
+            config.PAYOUT,
+          );
           if (!models.models.has(key))
             d = { ...d, state: "SEM ENTRADA", reason: labReason(s.symbol, h) };
           if (d.signal) {
@@ -494,8 +500,20 @@ async function tick() {
           news.context(s.symbol, decisionNow, h),
           news.ready(),
         );
-        const d = strategyDecision(f, pick, snapshot.trade!.p, decisionNow);
-        if (!d.signal) continue;
+        const d = applyPaperFeedback(
+          strategyDecision(f, pick, snapshot.trade!.p, decisionNow),
+          recent,
+          decisionNow,
+          config.PAYOUT,
+        );
+        if (!d.signal) {
+          decisions.set(s.symbol, [
+            ...(decisions.get(s.symbol) || []).filter((x) => x.horizon !== h),
+            d,
+          ]);
+          await store.saveDecision(f, d);
+          continue;
+        }
         await store.saveSignal(d.signal, true);
         signalsChanged = true;
         active.set(d.signal.id, d.signal);
