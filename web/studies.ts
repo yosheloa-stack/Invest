@@ -8,6 +8,7 @@ import {
 } from "../src/strategies";
 import type { Candle } from "../src/types";
 export { levelsAt } from "../src/strategies";
+export { priceContext } from "../src/price-context";
 export type Study = "sr" | "ema" | "bb" | "vwap" | "vol" | "rsi";
 export const STUDIES: { id: Study; label: string }[] = [
   { id: "sr", label: "Suporte e resistência" },
@@ -36,12 +37,14 @@ export const series = (bars: Bar[]): Series =>
 // Which indicators a strategy reads, so selecting it switches them on.
 export function studiesFor(id: string | undefined): Study[] {
   const family = id?.split(":")[0],
-    extra: Study[] =
-      id?.endsWith(":tendencia") || id?.endsWith(":lateral") ? ["ema"] : [];
+    extra: Study[] = id?.includes(":ctx2") ? ["sr"] : [];
   return [...extra, ...byFamily(family)];
 }
 function byFamily(family: string | undefined): Study[] {
   switch (family) {
+    case "estrutura":
+    case "lateral":
+    case "fibonacci":
     case "sr-toque":
     case "sr-rompimento":
       return ["sr"];
@@ -85,6 +88,12 @@ export const FAMILY_TEXT: Record<string, string> = {
     "Olha quem está agredindo (compradores ou vendedores) com volume alto.",
   exaustao: "Procura um candle muito maior que o normal (ATR).",
   "rsi-bollinger": "RSI no extremo e candle fora da Bollinger ao mesmo tempo.",
+  estrutura:
+    "Na tendência, espera o preço voltar na linha de tendência (LTA/LTB) e rejeitar.",
+  lateral:
+    "Com o mercado lateral, entra só na borda da faixa quando o preço rejeita.",
+  fibonacci:
+    "Na tendência, espera o recuo até a zona de 38,2% a 61,8% e a retomada.",
   "sr-toque":
     "Espera o preço tocar um suporte ou resistência que já segurou o preço antes.",
   "sr-rompimento":
@@ -94,8 +103,6 @@ export const directionText = (id: string) =>
   (id.includes(":reverter")
     ? "Entra contra o movimento."
     : "Entra a favor do movimento.") +
-  (id.endsWith(":tendencia")
-    ? " Só opera a favor da tendência (não vende em alta nem compra em baixa)."
-    : id.endsWith(":lateral")
-      ? " Só opera com o mercado lateral."
-      : "");
+  (id.includes(":ctx2")
+    ? " Só entra a favor da tendência, ou na borda de uma lateral com rejeição."
+    : "");

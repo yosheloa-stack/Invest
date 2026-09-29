@@ -1728,3 +1728,206 @@ tr.ok td {
     animation: none;
   }
 }
+
+/* Operational hierarchy: chart, measured outcomes, then supporting analysis. */
+.tv-stage {
+  min-height: 280px;
+}
+.tv-center {
+  overflow: auto;
+}
+.tv-chart {
+  min-height: 360px;
+}
+.signal-activity {
+  border-top: 1px solid var(--line);
+  padding: 14px 16px;
+  flex: 0 0 auto;
+}
+.signal-activity header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.signal-activity header div {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.signal-activity header strong {
+  font-size: 14px;
+}
+.signal-activity header span,
+.activity-note {
+  color: var(--muted);
+}
+.result-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  padding: 12px 0;
+  font-size: 12px;
+}
+.result-summary b {
+  font-variant-numeric: tabular-nums;
+  margin-right: 5px;
+  font-size: 16px;
+}
+.activity-rows {
+  max-height: 190px;
+  overflow: auto;
+}
+.activity-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+.activity-row small {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.activity-note {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 10px 0 0;
+}
+.tv-btn,
+.dock-bell {
+  min-height: 44px;
+}
+.tv-toolbar {
+  min-height: 46px;
+  height: auto;
+}
+@media (max-width: 700px) {
+  .signal-activity {
+    padding: 12px;
+  }
+  .activity-row {
+    grid-template-columns: 1fr auto;
+  }
+  .activity-row > div:nth-child(2) {
+    display: none;
+  }
+  .dock.enter .dock-bell,
+  .dock.running .dock-bell,
+  .dock.result .dock-bell {
+    display: flex;
+  }
+  .dock-bell span {
+    display: none;
+  }
+  .tv-center {
+    overflow: visible;
+  }
+}
+@media (max-width: 700px) {
+  :root {
+    --dock-h: 100px;
+  }
+}
+
+/* Operation details stay readable on phones and in fullscreen. */
+.operation-plan {
+  margin: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.operation-plan header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+.operation-plan header span,
+.operation-plan small,
+.operation-grid dt {
+  color: var(--muted);
+}
+.operation-plan p {
+  margin: 12px 0;
+}
+.operation-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.operation-grid dt {
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.operation-grid dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.tv-btn.fullscreen-toggle {
+  min-width: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
+}
+.tv-center.chart-expanded {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  width: 100%;
+  height: 100dvh;
+  max-height: none;
+  overflow: auto;
+  display: block;
+  background: var(--bg);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.chart-expanded .tv-chart {
+  height: 70dvh;
+  min-height: 340px;
+}
+@media (max-width: 700px) {
+  .operation-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tv-toolbar {
+    flex-wrap: wrap;
+  }
+}
+.history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  padding: 16px;
+}
+.history-filters label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.history-filters select {
+  min-height: 44px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+.history-filters p {
+  margin: 8px 0;
+  color: var(--muted);
+}
+.tab-history > .panel {
+  min-width: 0;
+  max-width: 100%;
+}
+.tab-history .panel-head {
+  flex-wrap: wrap;
+}

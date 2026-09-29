@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { config, weights } from "./config.js";
 import { predict } from "./models.js";
+// A historical edge never overrides a contrary current trend/timeframe.
+export function contraryContext(f, direction) {
+    return [f.groups.trend, f.groups.mtf, f.details.micro, f.details.macro].some((v) => typeof v === "number" && v * direction < 0);
+}
 export function evaluate(f, registry, newsReady, sniper) {
     const base = {
         horizon: f.horizon,
@@ -34,6 +38,8 @@ export function evaluate(f, registry, newsReady, sniper) {
                 state: "ANÁLISE INDISPONÍVEL",
                 reason: "NOTÍCIAS / IA NÃO CONFIGURADAS OU INDISPONÍVEIS",
             };
+        if (contraryContext(f, direction))
+            return { ...d, reason: "TENDÊNCIA / TIMEFRAME CONTRÁRIO À ENTRADA" };
         if (Number(f.details.spreadBps) > 10)
             return { ...d, reason: "SPREAD ELEVADO" };
         if (Number(f.details.atrPct) > 0.02 || Number(f.details.atrPct) < 0.00005)
@@ -148,6 +154,8 @@ export function strategyDecision(f, pick, price, now) {
         favorable: [e.label],
         contrary: [],
     };
+    if (contraryContext(f, pick.direction === "COMPRA" ? 1 : -1))
+        return { ...base, reason: "TENDÊNCIA / TIMEFRAME CONTRÁRIO À ENTRADA" };
     if (Number(f.details.spreadBps) > 10)
         return { ...base, reason: "SPREAD ELEVADO" };
     if (Number(f.details.atrPct) > 0.02 || Number(f.details.atrPct) < 0.00005)

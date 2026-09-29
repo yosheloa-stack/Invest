@@ -39,6 +39,8 @@ export interface MarketState {
   error: string | null;
   connectedAt: number;
   trade?: Trade;
+  forming?: Candle;
+  formingAt?: number;
   quote?: Quote;
   book?: {
     t: number;

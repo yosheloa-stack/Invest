@@ -1,3 +1,6 @@
+import SignalHistory from "./SignalHistory";
+import OperationPlan from "./OperationPlan";
+import { useChartFullscreen } from "./useChartFullscreen";
 import "./style.css";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -25,9 +28,10 @@ import {
   WifiOff,
 } from "lucide-react";
 import Auth from "./Auth";
+import SignalActivity from "./SignalActivity";
 import { BrandMark, CoinIcon } from "./Icons";
 import ThemeToggle from "./ThemeToggle";
-import { lastMove, liveBar, pushTick, useTicks } from "./live";
+import { lastMove, liveBar, pushTick, useTicks, lastServerTime } from "./live";
 import { FAMILY_TEXT, directionText } from "./studies";
 import CandleChart from "./CandleChart";
 import SignalDock from "./SignalDock";
@@ -73,8 +77,10 @@ function useLiveState(enabled: boolean) {
         try {
           const msg = JSON.parse(e.data);
           if (msg.type === "tick") pushTick(msg);
-          else setState(msg);
-          setLast(Date.now());
+          else {
+            setState(msg);
+            setLast(Date.now());
+          }
         } catch {
           /* ignore malformed frame */
         }
@@ -165,7 +171,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     }
   };
   const fresh = connected && now - last < 6000,
-    serverNow = state ? state.time + (now - last) : now,
+    serverNow = lastServerTime() || (state ? state.time + (now - last) : now),
     asset =
       state?.assets.find((a) => a.symbol === selected) ?? state?.assets[0],
     prices = useMemo(
@@ -208,9 +214,15 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
           </div>
           <TickerTape state={state} onOpen={open} />
           <div className="top-right">
-            <span className={`conn ${fresh ? "live" : "off"}`}>
+            <span
+              className={`conn ${fresh && asset?.feed === "CONECTADO" ? "live" : "off"}`}
+            >
               <i />
-              {fresh ? "Ao vivo" : "Reconectando"}
+              {!fresh
+                ? "Reconectando"
+                : asset?.feed === "CONECTADO"
+                  ? "Ao vivo"
+                  : "Dados indisponíveis"}
             </span>
             <span className="clock">{clock(serverNow)}</span>
             <span className="who">{user.name.split(" ")[0]}</span>
@@ -248,6 +260,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       </div>
       <SignalDock
         signals={state?.signals || []}
+        fresh={fresh}
         now={serverNow}
         prices={prices}
         lab={state?.strategies}
@@ -425,6 +438,7 @@ function TradeView({
   now: number;
 }) {
   useTicks();
+  const fullscreen = useChartFullscreen();
   const [focusId, setFocusId] = useState<string | null>(null),
     [side, setSide] = useState<SideTab>("strat");
   const evals = useMemo(
@@ -465,8 +479,17 @@ function TradeView({
   ];
   return (
     <div className="tv">
-      <section className="tv-center">
+      <section
+        ref={fullscreen.root}
+        className={`tv-center ${fullscreen.expanded ? "chart-expanded" : ""}`}
+        role={fullscreen.expanded ? "dialog" : undefined}
+        aria-modal={fullscreen.expanded || undefined}
+        aria-label={fullscreen.expanded ? "Gráfico em tela cheia" : undefined}
+      >
         <CandleChart
+          expanded={fullscreen.expanded}
+          onExpand={fullscreen.toggle}
+          key={asset.symbol}
           symbol={asset.symbol}
           title={pair(asset.symbol).replace("/", "")}
           focus={focus}
@@ -479,6 +502,25 @@ function TradeView({
             />
           }
         />
+        <OperationPlan
+          asset={asset}
+          signals={state.signals}
+          now={now}
+          fresh={fresh}
+        />
+        <SignalActivity
+          asset={asset}
+          signals={state.signals}
+          metrics={state.metrics}
+          now={now}
+          fresh={fresh}
+        />
+        {asset.symbol === "EURUSDT" && (
+          <p className="notice">
+            Fonte: Binance spot · EUR/USDT (Euro/Tether). Este gráfico não é
+            Forex EUR/USD.
+          </p>
+        )}
         {asset.reasons.length > 0 && (
           <p className="notice">{sentence(asset.reasons.join("; "))}</p>
         )}
@@ -878,88 +920,7 @@ function LabView({
   );
 }
 function HistoryView({ state }: { state: State | null }) {
-  const signals = state?.signals || [];
-  const download = () => {
-    const url = URL.createObjectURL(
-      new Blob([JSON.stringify(signals, null, 2)], {
-        type: "application/json",
-      }),
-    );
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "sinais.json";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-  const label: Record<string, string> = {
-    PENDING: "Aguardando entrada",
-    FILLED: "Em andamento",
-    INVALIDATED: "Cancelado",
-    EXPIRED: "Expirou sem entrada",
-    NO_DATA: "Sem cotação no fim",
-  };
-  return (
-    <section className="panel">
-      <div className="panel-head">
-        <h2>Sinais emitidos</h2>
-        <button className="ghost" onClick={download} disabled={!signals.length}>
-          <Download size={16} /> Exportar
-        </button>
-      </div>
-      <div className="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>Hora</th>
-              <th>Ativo</th>
-              <th>Direção</th>
-              <th>Exp.</th>
-              <th>Entrada</th>
-              <th>Saída</th>
-              <th>Resultado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {signals.map((s) => (
-              <tr key={s.id}>
-                <td>{clock(s.t)}</td>
-                <td>{ticker(s.symbol)}</td>
-                <td className={s.direction === "COMPRA" ? "up" : "down"}>
-                  {s.direction === "COMPRA" ? "Compra" : "Venda"}
-                </td>
-                <td>{s.horizon} min</td>
-                <td>{price(s.entry)}</td>
-                <td>{price(s.exit)}</td>
-                <td
-                  className={
-                    s.result === "WIN"
-                      ? "up"
-                      : s.result === "LOSS"
-                        ? "down"
-                        : ""
-                  }
-                >
-                  {s.result === "WIN"
-                    ? "Ganhou"
-                    : s.result === "LOSS"
-                      ? "Perdeu"
-                      : s.result === "NEUTRO"
-                        ? "Empate"
-                        : label[s.status] || s.status}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {!signals.length && (
-        <p className="muted pad">
-          Nenhum sinal ainda. Eles aparecem aqui quando uma estratégia aprovada
-          dispara.
-        </p>
-      )}
-    </section>
-  );
+  return <SignalHistory live={state?.signals || []} />;
 }
 function NewsView({ state }: { state: State | null }) {
   const news: News[] = state?.news || [];
@@ -1113,7 +1074,7 @@ function SystemView({
         </div>
         <div>
           <dt>Mercado</dt>
-          <dd>Binance spot ao vivo; EUR/USD vem do par EUR/USDT</dd>
+          <dd>Binance spot · EUR/USDT é Euro/Tether, não Forex EUR/USD</dd>
         </div>
         <div>
           <dt>Notícias</dt>

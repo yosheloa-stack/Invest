@@ -1,3 +1,4 @@
+import { contextAllows, structuralStrategies } from "./price-context.js";
 import type { Candle, Horizon } from "./types.js";
 // Rule-based strategies on closed 1m candles, validated by chronological backtest.
 // Selection happens on the in-sample slice only; approval uses the untouched out-of-sample slice.
@@ -20,8 +21,6 @@ export interface Series {
   vwap: Float64Array;
   sigma: Float64Array;
   volAvg: Float64Array;
-  // Market regime: 1 uptrend, -1 downtrend, 0 sideways (see trendOf).
-  trend: Int8Array;
   // Nearest support below / resistance above the close, from confirmed swing points (NaN if none).
   sup: Float64Array;
   res: Float64Array;
@@ -131,8 +130,6 @@ export function buildSeries(cs: Candle[]): Series {
   const e21 = ema(c, 21),
     e50 = ema(c, 50),
     atr = ema(tr, 14, 1 / 14);
-  const trend = new Int8Array(n);
-  for (let i = TREND_LOOK; i < n; i++) trend[i] = trendOf(c, e21, e50, atr, i);
   const { sup, res } = swingLevels(h, l, c, atr);
   const vwap = new Float64Array(n);
   let day = -1,
@@ -168,26 +165,9 @@ export function buildSeries(cs: Candle[]): Series {
     vwap,
     sigma: vol.std,
     volAvg: va.mean,
-    trend,
     sup,
     res,
   };
-}
-const TREND_LOOK = 10;
-// Uptrend: EMA21 above EMA50, EMA50 rising by a meaningful amount (vs ATR) and price above EMA50.
-// Mirror for downtrend; anything else is a sideways market.
-function trendOf(
-  c: Float64Array,
-  e21: Float64Array,
-  e50: Float64Array,
-  atr: Float64Array,
-  i: number,
-): Dir {
-  const slope = (e50[i] - e50[i - TREND_LOOK]) / atr[i];
-  if (!Number.isFinite(slope)) return 0;
-  if (e21[i] > e50[i] && slope > 0.3 && c[i] > e50[i]) return 1;
-  if (e21[i] < e50[i] && slope < -0.3 && c[i] < e50[i]) return -1;
-  return 0;
 }
 export const SWING = 5,
   SWING_WINDOW = 240;
@@ -299,42 +279,27 @@ export function levelsAt(s: Series, i = s.c.length - 1, max = 6): Level[] {
     .slice(0, max);
 }
 const sgn = (x: number): Dir => (x > 0 ? 1 : x < 0 ? -1 : 0);
-// Each family is tested both ways ("seguir" follows the move, "reverter" fades it), and each way
-// three times: in any market, only in the direction of the trend (never selling an uptrend), and
-// only in a sideways market. Parameters and filter are picked in-sample; the data decides.
+// Each family is tested both ways ("seguir" follows the move, "reverter" fades it); the data decides.
 function both(
   family: string,
   key: string,
   label: string,
   base: (s: Series, i: number) => Dir,
 ): StrategySpec[] {
-  const ways: [string, string, (s: Series, i: number) => Dir][] = [
-    ["seguir", "seguir", base],
-    ["reverter", "reverter", (s, i) => (-base(s, i) || 0) as Dir],
+  return [
+    {
+      id: `${family}:${key}:seguir`,
+      family,
+      label: `${label} · seguir`,
+      signal: base,
+    },
+    {
+      id: `${family}:${key}:reverter`,
+      family,
+      label: `${label} · reverter`,
+      signal: (s, i) => (-base(s, i) || 0) as Dir,
+    },
   ];
-  return ways.flatMap(([k, text, f]) => [
-    {
-      id: `${family}:${key}:${k}`,
-      family,
-      label: `${label} · ${text}`,
-      signal: f,
-    },
-    {
-      id: `${family}:${key}:${k}:tendencia`,
-      family,
-      label: `${label} · ${text} a favor da tendência`,
-      signal: (s: Series, i: number) => {
-        const d = f(s, i);
-        return d && d === s.trend[i] ? d : 0;
-      },
-    },
-    {
-      id: `${family}:${key}:${k}:lateral`,
-      family,
-      label: `${label} · ${text} só em lateral`,
-      signal: (s: Series, i: number) => (s.trend[i] === 0 ? f(s, i) : 0),
-    },
-  ]);
 }
 export function catalog(): StrategySpec[] {
   const out: StrategySpec[] = [];
@@ -502,7 +467,17 @@ export function catalog(): StrategySpec[] {
         },
       ),
     );
-  return out;
+  out.push(...structuralStrategies());
+  return out.map((spec) => ({
+    ...spec,
+    id: spec.id.includes(":ctx2")
+      ? spec.id
+      : spec.id.replace(/:(seguir|reverter)$/, ":ctx2:$1"),
+    signal: (s, i) => {
+      const d = spec.signal(s, i);
+      return contextAllows(s, i, d) ? d : 0;
+    },
+  }));
 }
 // One-sided Wilson lower bound of the win rate.
 export function wilson(wins: number, n: number, z: number) {
@@ -532,8 +507,8 @@ export function tally(
     lower: wilson(wins, n, z),
   };
 }
-// Mirrors live paper constraints: one position per symbol/horizon, cooldown after each signal,
-// entry at the signal candle close, exit h minutes later, any favourable move wins (binary option).
+// OHLC research approximation: close-to-close return with a neutral threshold.
+// It does not model bid/ask fills or the live shared per-asset admission gate.
 export function backtest(
   s: Series,
   spec: StrategySpec,
@@ -543,6 +518,7 @@ export function backtest(
   cooldownBars: number,
   z: number,
   split?: number,
+  returnThreshold = 0,
 ) {
   const w = [0, 0],
     l = [0, 0],
@@ -555,8 +531,8 @@ export function backtest(
     if (!d) continue;
     const r = (s.c[i + h] / s.c[i] - 1) * d,
       k = split !== undefined && i >= split ? 1 : 0;
-    if (r > 0) w[k]++;
-    else if (r < 0) l[k]++;
+    if (r > returnThreshold) w[k]++;
+    else if (r < -returnThreshold) l[k]++;
     else e[k]++;
     next = i + Math.max(h, cooldownBars);
   }
@@ -574,6 +550,7 @@ export interface LabOptions {
   minTrades: number;
   z: number;
   inSampleShare: number;
+  returnThreshold?: number;
 }
 // For each family: pick parameters on the in-sample slice, then judge once on the out-of-sample slice.
 export function evaluateSymbol(
@@ -592,18 +569,38 @@ export function evaluateSymbol(
     for (const family of families) {
       let best: { spec: StrategySpec; is: Tally } | undefined;
       for (const spec of specs.filter((x) => x.family === family)) {
-        const is = backtest(s, spec, h, WARMUP, split, o.cooldownBars, o.z).all;
+        const is = backtest(
+          s,
+          spec,
+          h,
+          WARMUP,
+          split,
+          o.cooldownBars,
+          o.z,
+          undefined,
+          o.returnThreshold,
+        ).all;
         if (is.trades < Math.max(30, o.minTrades / 2)) continue;
         if (!best || (is.lower ?? 0) > (best.is.lower ?? 0))
           best = { spec, is };
       }
       if (!best) continue;
-      const r = backtest(s, best.spec, h, split, n, o.cooldownBars, o.z, mid),
+      const r = backtest(
+          s,
+          best.spec,
+          h,
+          split,
+          n,
+          o.cooldownBars,
+          o.z,
+          mid,
+          o.returnThreshold,
+        ),
         oos = r.all,
         wr = oos.winRate ?? 0;
       const reason =
-        oos.trades < o.minTrades
-          ? `POUCAS OPERAÇÕES FORA DA AMOSTRA (${oos.trades} < ${o.minTrades})`
+        oos.wins + oos.losses < o.minTrades
+          ? `POUCAS OPERAÇÕES FORA DA AMOSTRA (${oos.wins + oos.losses} < ${o.minTrades})`
           : (oos.lower ?? 0) <= o.breakEven
             ? wr > o.breakEven
               ? "ACIMA DO BREAK-EVEN, MAS SEM SIGNIFICÂNCIA ESTATÍSTICA"

@@ -18,11 +18,10 @@ export const countdown = (ms: number) => {
   const s = Math.max(0, Math.ceil(ms / 1000));
   return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 };
-// EURUSDT is shown as EUR/USD; crypto pairs keep the coin ticker.
-export const pair = (symbol: string) =>
-  symbol === "EURUSDT" ? "EUR/USD" : symbol.replace("USDT", "/USDT");
+// Preserve the actual quote asset. EUR/USDT is not Forex EUR/USD.
+export const pair = (symbol: string) => symbol.replace(/USDT$/, "/USDT");
 export const ticker = (symbol: string) =>
-  symbol === "EURUSDT" ? "EUR/USD" : symbol.replace("USDT", "");
+  symbol === "EURUSDT" ? "EUR/USDT" : symbol.replace("USDT", "");
 export const COIN_NAMES: Record<string, string> = {
   BTCUSDT: "Bitcoin",
   ETHUSDT: "Ethereum",
@@ -34,7 +33,7 @@ export const COIN_NAMES: Record<string, string> = {
   AVAXUSDT: "Avalanche",
   LTCUSDT: "Litecoin",
   LINKUSDT: "Chainlink",
-  EURUSDT: "Euro / Dólar",
+  EURUSDT: "Euro / Tether · Binance spot",
 };
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(path, {

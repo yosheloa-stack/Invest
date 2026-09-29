@@ -12,8 +12,12 @@ export class RestClient {
     queue = Promise.resolve();
     async get(path) {
         let release;
-        const previous = this.queue;
-        this.queue = new Promise((r) => (release = r));
+        const clock = path === "/api/v3/time";
+        const previous = clock ? Promise.resolve() : this.queue;
+        if (clock)
+            release = () => { };
+        else
+            this.queue = new Promise((r) => (release = r));
         await previous;
         try {
             for (let n = 0; n < 6; n++) {
@@ -149,6 +153,8 @@ export class MarketData extends EventEmitter {
         s.lastKline = {};
         s.trades = [];
         s.trade = undefined;
+        s.forming = undefined;
+        s.formingAt = undefined;
         s.quote = undefined;
         s.book = undefined;
         const streams = [
@@ -342,6 +348,20 @@ export class MarketData extends EventEmitter {
                 eventTime > now + 1000)
                 throw Error("Kline atrasado");
             s.lastKline[tf] = now;
+            if (tf === "1m" && !k.x && eventTime >= (s.formingAt ?? 0)) {
+                s.forming = this.validateCandle({
+                    t: +k.t,
+                    end: +k.T,
+                    o: +k.o,
+                    h: +k.h,
+                    l: +k.l,
+                    c: +k.c,
+                    v: +k.v,
+                    buy: +k.V,
+                    quote: +k.q,
+                });
+                s.formingAt = eventTime;
+            }
             if (k.x) {
                 const c = this.validateCandle({
                     t: +k.t,

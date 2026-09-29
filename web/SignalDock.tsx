@@ -7,115 +7,144 @@ import {
   Check,
   X,
 } from "lucide-react";
-import { countdown, pair, pct, price } from "./format";
+import { clock, countdown, pair, pct, price } from "./format";
 import type { LabBrief, Signal } from "./types";
 import { CoinIcon } from "./Icons";
-function beep(up: boolean) {
+import { SignalEvents, resultLabel, evidenceLabel } from "./signal-events";
+let audio: AudioContext | undefined;
+async function unlockAudio() {
   try {
-    const ctx = new AudioContext(),
-      o = ctx.createOscillator(),
-      g = ctx.createGain();
-    o.frequency.value = up ? 880 : 520;
-    g.gain.setValueAtTime(0.0001, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.5);
-    o.connect(g).connect(ctx.destination);
-    o.start();
-    o.stop(ctx.currentTime + 0.55);
+    audio ??= new AudioContext();
+    await audio.resume();
   } catch {
-    /* audio blocked until the user interacts with the page */
+    /* unsupported */
   }
+}
+function beep(up: boolean) {
+  if (!audio || audio.state !== "running") return;
+  const o = audio.createOscillator(),
+    g = audio.createGain();
+  o.frequency.value = up ? 880 : 520;
+  g.gain.setValueAtTime(0.0001, audio.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.15, audio.currentTime + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.4);
+  o.connect(g).connect(audio.destination);
+  o.onended = () => {
+    o.disconnect();
+    g.disconnect();
+  };
+  o.start();
+  o.stop(audio.currentTime + 0.45);
 }
 // The one place that tells the trader what to do right now: enter, wait for expiry, or see the result.
 export default function SignalDock({
   signals,
+  fresh,
   now,
   prices,
   lab,
   onOpen,
 }: {
   signals: Signal[];
+  fresh: boolean;
   now: number;
   prices: Record<string, number | null>;
   lab?: LabBrief;
   onOpen: (symbol: string) => void;
 }) {
-  const [alerts, setAlerts] = useState(() => {
-    try {
-      return localStorage.getItem("yosh-alerts") === "on";
-    } catch {
-      return false;
-    }
-  });
-  const seen = useRef<Set<string> | null>(null);
-  const pending = signals.find(
-      (s) => s.status === "PENDING" && s.expires > now,
-    ),
-    running = signals.find((s) => s.status === "FILLED"),
+  // Sound must be unlocked by a user gesture on each page load.
+  const [alerts, setAlerts] = useState(false);
+  const [permission, setPermission] = useState("Avisos nesta página");
+  const events = useRef(new SignalEvents());
+  const pending = fresh
+      ? signals.find((s) => s.status === "PENDING" && s.expires > now)
+      : undefined,
+    running = fresh ? signals.find((s) => s.status === "FILLED") : undefined,
     done = signals.find(
       (s) => s.status === "SETTLED" && s.exitAt && now - s.exitAt < 90000,
     ),
     current = pending || running || done;
   useEffect(() => {
-    const ids = new Set(
-      signals.filter((s) => s.status === "PENDING").map((s) => s.id),
-    );
-    if (seen.current === null) {
-      seen.current = ids;
+    const notices = events.current.consume(signals, now, fresh);
+    if (!alerts || !notices.length) return;
+    beep(notices.some((e) => e.kind === "entry" || e.signal.result === "WIN"));
+    for (const { signal: s, kind, key } of notices) {
+      const title =
+        kind === "entry"
+          ? `${s.direction} ${pair(s.symbol)} · ${s.horizon} min`
+          : kind === "filled"
+            ? `Entrada paper registrada · ${pair(s.symbol)}`
+            : `${resultLabel(s)} · ${pair(s.symbol)} · ${s.horizon} min`;
+      const body =
+        kind === "entry"
+          ? `Válido por ${countdown(s.expires - now)}. ${evidenceLabel(s)}: ${pct(s.probability)}.`
+          : kind === "filled"
+            ? `Entrada ${price(s.entry)}. Saída às ${clock(s.due ?? now)} (${countdown((s.due ?? now) - now)}).`
+            : kind === "result"
+              ? `Paper: ${price(s.entry)} → ${price(s.exit)}. Resultado salvo no histórico.`
+              : s.reason || "Entrada encerrada sem resultado válido.";
+      try {
+        if ("Notification" in window && Notification.permission === "granted")
+          new Notification(title, { body, tag: key });
+      } catch {
+        /* in-page activity remains available */
+      }
+    }
+  }, [signals, alerts, fresh, now]);
+  const toggle = async () => {
+    if (alerts) {
+      setAlerts(false);
       return;
     }
-    for (const s of signals)
-      if (s.status === "PENDING" && !seen.current.has(s.id)) {
-        seen.current.add(s.id);
-        if (!alerts) continue;
-        beep(s.direction === "COMPRA");
-        try {
-          if (Notification.permission === "granted")
-            new Notification(
-              `${s.direction} ${pair(s.symbol)} · ${s.horizon} min`,
-              {
-                body: `Entre agora. Acerto medido no teste: ${pct(s.probability)}.`,
-                tag: s.id,
-              },
-            );
-        } catch {
-          /* notifications unsupported */
-        }
-      }
-  }, [signals, alerts]);
-  const toggle = async () => {
-    const next = !alerts;
-    if (
-      next &&
-      "Notification" in window &&
-      Notification.permission === "default"
-    )
-      await Notification.requestPermission().catch(() => undefined);
-    setAlerts(next);
-    try {
-      localStorage.setItem("yosh-alerts", next ? "on" : "off");
-    } catch {
-      /* private mode */
+    // Unlock before awaiting notification permission, while the gesture is active.
+    const unlocking = unlockAudio();
+    let message = "Som ativo · mantenha esta página aberta";
+    if ("Notification" in window) {
+      const p =
+        Notification.permission === "default"
+          ? await Notification.requestPermission().catch(() => "denied")
+          : Notification.permission;
+      message =
+        p === "granted"
+          ? "Som e avisos do navegador ativos"
+          : "Som ativo · notificações bloqueadas no navegador";
     }
-    if (next) beep(true);
+    await unlocking;
+    if (!audio || audio.state !== "running")
+      message = "Som indisponível · acompanhe os avisos na página";
+    setPermission(message);
+    setAlerts(true);
+    beep(true);
   };
   const bell = (
-    <button className="dock-bell" onClick={toggle} aria-pressed={alerts}>
+    <button
+      className="dock-bell"
+      onClick={toggle}
+      aria-pressed={alerts}
+      title={permission}
+      aria-label={alerts ? permission : "Ligar avisos"}
+    >
       {alerts ? <Bell size={18} /> : <BellOff size={18} />}
       <span>{alerts ? "Avisos ligados" : "Ligar avisos"}</span>
     </button>
   );
-  if (!current)
+  if (!fresh || !current)
     return (
       <div className="dock idle" role="status">
         <div className="dock-main">
           <span className="dock-pulse" />
           <div>
-            <strong>Aguardando entrada</strong>
+            <strong>
+              {fresh
+                ? "Aguardando entrada"
+                : "Feed interrompido · entradas pausadas"}
+            </strong>
             <p>
-              {lab?.approved
-                ? `${lab.approved} estratégia(s) aprovada(s) vigiando o mercado. O aviso aparece aqui na hora.`
-                : "Nenhuma estratégia passou no teste agora. Sem entrada é melhor do que entrada ruim."}
+              {!fresh
+                ? "Aguarde a reconexão. Os resultados ficam no histórico."
+                : lab?.approved
+                  ? `${lab.approved} estratégia(s) aprovada(s) vigiando o mercado. O aviso aparece aqui na hora.`
+                  : "Nenhuma estratégia passou no teste agora. Sem entrada é melhor do que entrada ruim."}
             </p>
           </div>
         </div>
@@ -137,8 +166,8 @@ export default function SignalDock({
               {current.horizon} min
             </strong>
             <p>
-              Entre agora, até {price(current.entryLow)} –{" "}
-              {price(current.entryHigh)}. Acerto medido no teste:{" "}
+              Faixa de entrada: {price(current.entryLow)} –{" "}
+              {price(current.entryHigh)}. {evidenceLabel(current)}:{" "}
               {pct(current.probability)}.
             </p>
           </div>
@@ -162,7 +191,8 @@ export default function SignalDock({
               {buy ? "Compra" : "Venda"} {pair(current.symbol)} em andamento
             </strong>
             <p>
-              Entrada {price(current.entry)} · agora {price(live)} ·{" "}
+              Entrada {price(current.entry)} às {clock(current.entryAt!)} ·
+              saída às {clock(current.due!)} · agora {price(live)} ·{" "}
               {ahead == null ? "—" : ahead ? "ganhando" : "perdendo"}
             </p>
           </div>
@@ -181,8 +211,8 @@ export default function SignalDock({
         {won ? <Check size={30} /> : <X size={30} />}
         <div>
           <strong>
-            {won ? "Ganhou" : current.result === "LOSS" ? "Perdeu" : "Empatou"}{" "}
-            · {pair(current.symbol)} {current.horizon} min
+            {resultLabel(current)} · paper · {pair(current.symbol)}{" "}
+            {current.horizon} min
           </strong>
           <p>
             Entrada {price(current.entry)} → saída {price(current.exit)}.
