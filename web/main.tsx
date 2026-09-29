@@ -25,9 +25,10 @@ import {
   WifiOff,
 } from "lucide-react";
 import Auth from "./Auth";
+import SignalActivity from "./SignalActivity";
 import { BrandMark, CoinIcon } from "./Icons";
 import ThemeToggle from "./ThemeToggle";
-import { lastMove, liveBar, pushTick, useTicks } from "./live";
+import { lastMove, liveBar, pushTick, useTicks, lastServerTime } from "./live";
 import { FAMILY_TEXT, directionText } from "./studies";
 import CandleChart from "./CandleChart";
 import SignalDock from "./SignalDock";
@@ -73,8 +74,10 @@ function useLiveState(enabled: boolean) {
         try {
           const msg = JSON.parse(e.data);
           if (msg.type === "tick") pushTick(msg);
-          else setState(msg);
-          setLast(Date.now());
+          else {
+            setState(msg);
+            setLast(Date.now());
+          }
         } catch {
           /* ignore malformed frame */
         }
@@ -165,7 +168,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     }
   };
   const fresh = connected && now - last < 6000,
-    serverNow = state ? state.time + (now - last) : now,
+    serverNow = lastServerTime() || (state ? state.time + (now - last) : now),
     asset =
       state?.assets.find((a) => a.symbol === selected) ?? state?.assets[0],
     prices = useMemo(
@@ -248,6 +251,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       </div>
       <SignalDock
         signals={state?.signals || []}
+        fresh={fresh}
         now={serverNow}
         prices={prices}
         lab={state?.strategies}
@@ -467,6 +471,7 @@ function TradeView({
     <div className="tv">
       <section className="tv-center">
         <CandleChart
+          key={asset.symbol}
           symbol={asset.symbol}
           title={pair(asset.symbol).replace("/", "")}
           focus={focus}
@@ -478,6 +483,13 @@ function TradeView({
               onSelect={onSelect}
             />
           }
+        />
+        <SignalActivity
+          asset={asset}
+          signals={state.signals}
+          metrics={state.metrics}
+          now={now}
+          fresh={fresh}
         />
         {asset.reasons.length > 0 && (
           <p className="notice">{sentence(asset.reasons.join("; "))}</p>
