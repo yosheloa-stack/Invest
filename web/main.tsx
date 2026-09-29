@@ -6,6 +6,11 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   BarChart3,
+  BrainCircuit,
+  ChartCandlestick,
+  ChartColumnIncreasing,
+  ScrollText,
+  Settings2,
   Box,
   List,
   ChevronDown,
@@ -20,6 +25,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import Auth from "./Auth";
+import { BrandMark, CoinIcon } from "./Icons";
 import ThemeToggle from "./ThemeToggle";
 import { lastMove, liveBar, pushTick, useTicks } from "./live";
 import { FAMILY_TEXT, directionText } from "./studies";
@@ -41,12 +47,12 @@ const Scene3D = lazy(() => import("./Scene3D"));
 const Market3D = lazy(() => import("./Market3D"));
 type Tab = "trade" | "lab" | "history" | "news" | "stats" | "system";
 const TABS: { id: Tab; label: string; icon: typeof Activity }[] = [
-  { id: "trade", label: "Operar", icon: CandlestickChart },
-  { id: "lab", label: "Estratégias", icon: FlaskConical },
-  { id: "history", label: "Histórico", icon: History },
+  { id: "trade", label: "Operar", icon: ChartCandlestick },
+  { id: "lab", label: "Estratégias", icon: BrainCircuit },
+  { id: "history", label: "Histórico", icon: ScrollText },
   { id: "news", label: "Notícias", icon: Newspaper },
-  { id: "stats", label: "Desempenho", icon: BarChart3 },
-  { id: "system", label: "Sistema", icon: Server },
+  { id: "stats", label: "Desempenho", icon: ChartColumnIncreasing },
+  { id: "system", label: "Sistema", icon: Settings2 },
 ];
 function useLiveState(enabled: boolean) {
   const [state, setState] = useState<State | null>(null),
@@ -176,20 +182,19 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   return (
     <div className="shell">
       <nav className="rail" aria-label="Principal">
-        <div className="mark" aria-hidden="true">
-          <span />
-          <span />
-          <span />
+        <div className="rail-brand">
+          <BrandMark size={30} />
         </div>
         {TABS.map((t) => (
           <button
             key={t.id}
             className={tab === t.id ? "on" : ""}
             aria-current={tab === t.id ? "page" : undefined}
-            title={t.label}
+            aria-label={t.label}
+            data-tip={t.label}
             onClick={() => setTab(t.id)}
           >
-            <t.icon size={20} strokeWidth={1.7} />
+            <t.icon size={20} strokeWidth={1.6} />
             <span>{t.label}</span>
           </button>
         ))}
@@ -197,6 +202,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       <div className="page">
         <header className="top">
           <div className="brand">
+            <BrandMark size={22} />
             <strong>Yosh</strong>
             <span>Scanner</span>
           </div>
@@ -300,6 +306,7 @@ function TickerTape({
           aria-hidden={dup || undefined}
           onClick={() => onOpen(a.symbol)}
         >
+          <CoinIcon symbol={a.symbol} size={16} />
           <b>{ticker(a.symbol)}</b>
           {price(liveBar(a.symbol)?.c ?? a.price)}
           <em className={(ch ?? 0) >= 0 ? "up" : "down"}>{signed(ch)}</em>
@@ -316,27 +323,6 @@ function TickerTape({
   );
 }
 type SideTab = "strat" | "list" | "map" | "news";
-const LOGO: Record<string, string> = {
-  BTCUSDT: "#f7931a",
-  ETHUSDT: "#627eea",
-  SOLUSDT: "#9945ff",
-  BNBUSDT: "#f3ba2f",
-  XRPUSDT: "#23292f",
-  DOGEUSDT: "#c2a633",
-  ADAUSDT: "#0033ad",
-  AVAXUSDT: "#e84142",
-  LTCUSDT: "#345d9d",
-  LINKUSDT: "#2a5ada",
-  EURUSDT: "#1a4fa0",
-};
-const Logo = ({ symbol, small }: { symbol: string; small?: boolean }) => (
-  <i
-    className={`tv-logo ${small ? "small" : ""}`}
-    style={{ background: LOGO[symbol] || "#787b86" }}
-  >
-    {symbol === "EURUSDT" ? "€" : ticker(symbol).slice(0, 1)}
-  </i>
-);
 function SymbolPicker({
   state,
   selected,
@@ -354,7 +340,7 @@ function SymbolPicker({
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        <Logo symbol={selected} />
+        <CoinIcon symbol={selected} size={22} />
         {pair(selected).replace("/", "")}
         <ChevronDown size={14} />
       </button>
@@ -370,6 +356,7 @@ function SymbolPicker({
                 setOpen(false);
               }}
             >
+              <CoinIcon symbol={a.symbol} size={20} />
               <b>{pair(a.symbol).replace("/", "")}</b>
               <span>{COIN_NAMES[a.symbol]}</span>
             </button>
@@ -408,7 +395,7 @@ function Watchlist({
               onClick={() => onSelect(a.symbol)}
             >
               <span className="w-sym">
-                <Logo symbol={a.symbol} small />
+                <CoinIcon symbol={a.symbol} size={20} />
                 {ticker(a.symbol)}
               </span>
               <LivePrice symbol={a.symbol} fallback={a.price} />
@@ -471,7 +458,7 @@ function TradeView({
       )
       .slice(0, 6);
   const SIDE: { id: SideTab; label: string; icon: typeof Activity }[] = [
-    { id: "strat", label: "Estratégias", icon: FlaskConical },
+    { id: "strat", label: "Estratégias", icon: BrainCircuit },
     { id: "list", label: "Ativos", icon: List },
     { id: "map", label: "Mapa 3D", icon: Box },
     { id: "news", label: "Notícias", icon: Newspaper },

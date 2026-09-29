@@ -266,36 +266,6 @@ select {
     color: var(--down-text);
   }
 }
-/* Logo */
-.mark {
-  display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 20px;
-}
-.mark span {
-  width: 5px;
-  border-radius: 1px;
-  background: var(--accent);
-}
-.mark span:nth-child(1) {
-  height: 40%;
-  opacity: 0.5;
-}
-.mark span:nth-child(2) {
-  height: 70%;
-  opacity: 0.75;
-}
-.mark span:nth-child(3) {
-  height: 100%;
-}
-.mark.big {
-  height: 40px;
-  gap: 5px;
-}
-.mark.big span {
-  width: 9px;
-}
 /* Login */
 .scene3d {
   position: absolute;
@@ -428,11 +398,17 @@ select {
   border-right: 1px solid var(--line);
   z-index: 5;
 }
-.rail .mark {
-  justify-content: center;
-  margin: 2px 0 14px;
+.rail-brand {
+  display: grid;
+  place-items: center;
+  margin: 2px 0 12px;
+}
+.brand-mark {
+  display: block;
+  flex: 0 0 auto;
 }
 .rail button {
+  position: relative;
   display: grid;
   justify-items: center;
   gap: 2px;
@@ -453,6 +429,39 @@ select {
 .rail button.on {
   background: var(--accent-soft);
   color: var(--accent-text);
+}
+.rail button.on::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+/* Name of the page next to its icon, on hover or keyboard focus */
+.rail button::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 5px 9px;
+  border-radius: 4px;
+  background: var(--text);
+  color: var(--surface);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+  z-index: 50;
+}
+.rail button:hover::after,
+.rail button:focus-visible::after {
+  opacity: 1;
 }
 .page {
   min-width: 0;
@@ -478,6 +487,11 @@ select {
   gap: 5px;
   font-size: 15px;
   white-space: nowrap;
+}
+.brand .brand-mark {
+  display: none;
+  align-self: center;
+  margin-right: 3px;
 }
 .brand strong {
   font-weight: 700;
@@ -506,7 +520,7 @@ select {
 }
 .tape button {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   border: 0;
   background: none;
@@ -652,22 +666,21 @@ select {
   font-weight: 700;
   font-size: 14px;
 }
-.tv-logo {
+.coin {
   display: inline-grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  font-style: normal;
   flex: 0 0 auto;
+  border-radius: 50%;
+  vertical-align: middle;
 }
-.tv-logo.small {
-  width: 18px;
-  height: 18px;
+.coin-blank {
+  background: var(--line-2);
+  color: var(--text);
   font-size: 10px;
+  font-weight: 700;
+}
+.tape .coin {
+  align-self: center;
 }
 .tv-menu-wrap {
   position: relative;
@@ -1490,7 +1503,12 @@ tr.ok td {
     border-top: 1px solid var(--line);
     z-index: 30;
   }
-  .rail .mark {
+  .brand .brand-mark {
+    display: block;
+  }
+  .rail-brand,
+  .rail button::after,
+  .rail button.on::before {
     display: none;
   }
   .rail button {

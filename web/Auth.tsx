@@ -2,6 +2,7 @@ import { lazy, Suspense, useState, type FormEvent } from "react";
 import { api } from "./format";
 import type { User } from "./types";
 import ThemeToggle from "./ThemeToggle";
+import { BrandMark } from "./Icons";
 const Scene3D = lazy(() => import("./Scene3D"));
 export default function Auth({
   allowSignup,
@@ -41,11 +42,7 @@ export default function Auth({
         <Scene3D />
       </Suspense>
       <div className="auth-copy">
-        <div className="mark big" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </div>
+        <BrandMark size={56} />
         <h1>Yosh Scanner</h1>
         <p>
           Sinais de compra e venda para opções de 5, 10 e 15 minutos, só de

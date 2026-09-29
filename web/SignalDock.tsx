@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { countdown, pair, pct, price } from "./format";
 import type { LabBrief, Signal } from "./types";
+import { CoinIcon } from "./Icons";
 function beep(up: boolean) {
   try {
     const ctx = new AudioContext(),
@@ -131,6 +132,7 @@ export default function SignalDock({
           <Icon size={34} strokeWidth={2.6} />
           <div>
             <strong>
+              <CoinIcon symbol={current.symbol} size={18} />{" "}
               {buy ? "Compra" : "Venda"} {pair(current.symbol)} · expiração{" "}
               {current.horizon} min
             </strong>
@@ -156,6 +158,7 @@ export default function SignalDock({
           <Icon size={28} />
           <div>
             <strong>
+              <CoinIcon symbol={current.symbol} size={18} />{" "}
               {buy ? "Compra" : "Venda"} {pair(current.symbol)} em andamento
             </strong>
             <p>
