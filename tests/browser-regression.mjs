@@ -66,6 +66,7 @@ app.get("/api/auth/me", (_, res) =>
 app.get("/api/strategies", (_, res) =>
   res.json({ evaluations: [], status: "TEST FIXTURE", approved: 0, tested: 0 }),
 );
+app.get("/api/signals", (_, res) => res.json(signals));
 app.get("/api/candles/:symbol", async (req, res) => {
   const symbol = req.params.symbol,
     start = Math.floor(Date.now() / 60000) * 60000;
@@ -155,6 +156,15 @@ try {
     .filter({ hasText: "SOLUSDT" })
     .waitFor({ timeout: 12000 });
   assert.ok((await page.locator(".chart-canvas canvas").count()) > 0);
+  // Exercise the CSS viewport fallback used when native fullscreen is absent.
+  await page.evaluate(() => {
+    HTMLElement.prototype.requestFullscreen = undefined;
+  });
+  await page.getByRole("button", { name: "Tela cheia", exact: true }).click();
+  await page.getByRole("dialog", { name: "Gráfico em tela cheia" }).waitFor();
+  assert.ok(await page.locator(".operation-plan").isVisible());
+  await page.keyboard.press("Escape");
+  assert.equal(await page.getByRole("dialog").count(), 0);
   await page.getByRole("button", { name: "Ligar avisos" }).click();
   const n = Date.now();
   const signal = {
@@ -179,6 +189,16 @@ try {
   await page.waitForFunction(() =>
     window.testNotices.some((n) =>
       n.title.includes("Entrada paper registrada"),
+    ),
+  );
+  assert.ok(
+    (await page.locator(".operation-plan").innerText()).includes(
+      "Saída por tempo",
+    ),
+  );
+  assert.ok(
+    (await page.locator(".operation-plan").innerText()).includes(
+      "Entrada paper registrada",
     ),
   );
   signals = [
@@ -207,10 +227,29 @@ try {
     ),
     "no horizontal overflow on mobile",
   );
+  await page.getByRole("button", { name: "Tela cheia", exact: true }).click();
+  await page.getByRole("dialog", { name: "Gráfico em tela cheia" }).waitFor();
+  await page
+    .getByRole("button", { name: "Sair da tela cheia", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Histórico", exact: true }).click();
+  await page.getByRole("heading", { name: "Histórico de operações" }).waitFor();
+  await page.getByLabel("Resultado", { exact: true }).selectOption("WIN");
+  await page.getByRole("cell", { name: "GREEN", exact: true }).waitFor();
+  await page.getByLabel("Resultado", { exact: true }).selectOption("LOSS");
+  await page
+    .getByText("Nenhuma operação corresponde aos filtros.", { exact: true })
+    .waitFor();
+  assert.ok(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+    "history stays within mobile viewport",
+  );
   await page.screenshot({ path: "/tmp/invest-mobile.png", fullPage: true });
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: pair switching, timeframe switching, empty-history recovery, canvas, skipped-pending alert, result notification, deduplication, mobile layout; no page errors",
+    "PASS: pair switching, timeframe switching, empty-history recovery, canvas, skipped-pending alert, result notification, deduplication, operation plan, fullscreen fallback desktop/mobile, history filters, mobile layout; no page errors",
   );
 } finally {
   await browser?.close();

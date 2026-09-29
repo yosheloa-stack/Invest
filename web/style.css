@@ -1789,3 +1789,101 @@ tr.ok td {
     --dock-h: 100px;
   }
 }
+
+/* Operation details stay readable on phones and in fullscreen. */
+.operation-plan {
+  margin: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.operation-plan header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+.operation-plan header span,
+.operation-plan small,
+.operation-grid dt {
+  color: var(--muted);
+}
+.operation-plan p {
+  margin: 12px 0;
+}
+.operation-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.operation-grid dt {
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.operation-grid dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.tv-btn.fullscreen-toggle {
+  min-width: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
+}
+.tv-center.chart-expanded {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  width: 100%;
+  height: 100dvh;
+  max-height: none;
+  overflow: auto;
+  display: block;
+  background: var(--bg);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.chart-expanded .tv-chart {
+  height: 70dvh;
+  min-height: 340px;
+}
+@media (max-width: 700px) {
+  .operation-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tv-toolbar {
+    flex-wrap: wrap;
+  }
+}
+.history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  padding: 16px;
+}
+.history-filters label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.history-filters select {
+  min-height: 44px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+.history-filters p {
+  margin: 8px 0;
+  color: var(--muted);
+}
+.tab-history > .panel {
+  min-width: 0;
+  max-width: 100%;
+}
+.tab-history .panel-head {
+  flex-wrap: wrap;
+}
