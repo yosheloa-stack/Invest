@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState, type FormEvent } from "react";
 import { api } from "./format";
 import type { User } from "./types";
+import ThemeToggle from "./ThemeToggle";
 const Scene3D = lazy(() => import("./Scene3D"));
 export default function Auth({
   allowSignup,
@@ -35,6 +36,7 @@ export default function Auth({
   };
   return (
     <div className="auth">
+      <ThemeToggle className="icon auth-theme" />
       <Suspense fallback={<div className="scene3d" />}>
         <Scene3D />
       </Suspense>

@@ -1,10 +1,7 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
-import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { pct, ticker } from "./format";
+import { PALETTE, useTheme } from "./theme";
 type Item = { symbol: string; change: number | null };
 // 3D market map: one glowing column per asset, height = last-hour move, color = direction.
 // Click a column to open that asset.
@@ -22,7 +19,9 @@ export default function Market3D({
     data = useRef({ items, selected, onSelect });
   data.current = { items, selected, onSelect };
   const key = items.map((i) => i.symbol).join();
+  const theme = useTheme();
   useEffect(() => {
+    const P = PALETTE[theme];
     const el = host.current,
       lab = labels.current;
     if (!el || !lab) return;
@@ -33,12 +32,13 @@ export default function Market3D({
       el.classList.add("no-webgl");
       return;
     }
+    renderer.setClearColor(P.fog, 1);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     el.appendChild(renderer.domElement);
     const scene = new THREE.Scene(),
       camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
-    scene.fog = new THREE.Fog(0x131722, 18, 40);
+    scene.fog = new THREE.Fog(P.fog, 30, 70);
     scene.add(new THREE.AmbientLight(0x8fa3c8, 0.5));
     const keyLight = new THREE.DirectionalLight(0xffffff, 1.6);
     keyLight.position.set(5, 12, 7);
@@ -47,7 +47,7 @@ export default function Market3D({
       radius = Math.max(4.2, n * 0.52),
       up = new THREE.Color(0x089981),
       down = new THREE.Color(0xf23645),
-      flat = new THREE.Color(0x787b86),
+      flat = new THREE.Color(P.flat),
       brass = new THREE.Color(0x2962ff);
     // Floor: a faint polar grid, like a radar dish the columns stand on.
     const floor = new THREE.PolarGridHelper(
@@ -55,8 +55,8 @@ export default function Market3D({
       24,
       6,
       96,
-      0x2a2e39,
-      0x1e222d,
+      P.grid3d[0],
+      P.grid3d[1],
     );
     floor.position.y = 0;
     scene.add(floor);
@@ -94,21 +94,10 @@ export default function Market3D({
       lab.appendChild(tag);
       return { mesh, cap, mat, capMat, tag, h: 0.3, symbol: it.symbol };
     });
-    const composer = new EffectComposer(renderer);
-    composer.addPass(new RenderPass(scene, camera));
-    const bloom = new UnrealBloomPass(
-      new THREE.Vector2(256, 256),
-      0.55,
-      0.4,
-      0.55,
-    );
-    composer.addPass(bloom);
-    composer.addPass(new OutputPass());
     const resize = () => {
       const w = el.clientWidth || 1,
         h = el.clientHeight || 1;
       renderer.setSize(w, h, false);
-      composer.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
     };
@@ -142,7 +131,10 @@ export default function Market3D({
       const { items: list, selected: sel } = data.current,
         max = Math.max(0.004, ...list.map((x) => Math.abs(x.change ?? 0)));
       if (!still) angle += dt * 0.12;
-      const far = radius + 7.5 + Math.max(0, 1.6 - camera.aspect) * 5;
+      const far = Math.max(
+        radius + 7.5,
+        (radius + 1.6) / (Math.tan((19 * Math.PI) / 180) * camera.aspect),
+      );
       camera.position.set(
         Math.cos(angle) * far,
         radius * 0.95 + 2.4,
@@ -177,7 +169,7 @@ export default function Market3D({
         const text = `${ticker(c.symbol)} ${it?.change == null ? "—" : `${ch >= 0 ? "+" : ""}${pct(ch, 2)}`}`;
         if (c.tag.textContent !== text) c.tag.textContent = text;
       });
-      composer.render();
+      renderer.render(scene, camera);
     };
     const loop = (now: number) => {
       frame = requestAnimationFrame(loop);
@@ -190,7 +182,6 @@ export default function Market3D({
       ro.disconnect();
       io.disconnect();
       renderer.domElement.removeEventListener("click", click);
-      composer.dispose();
       renderer.dispose();
       geo.dispose();
       cols.forEach((c) => {
@@ -200,7 +191,7 @@ export default function Market3D({
       });
       el.removeChild(renderer.domElement);
     };
-  }, [key]);
+  }, [key, theme]);
   return (
     <div className="m3d">
       <div className="m3d-canvas" ref={host} aria-hidden="true" />

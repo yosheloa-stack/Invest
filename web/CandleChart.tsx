@@ -32,23 +32,7 @@ import {
   type Study,
 } from "./studies";
 import type { CandleData, Evaluation, Signal } from "./types";
-// TradingView dark palette.
-export const TV = {
-  up: "#089981",
-  down: "#F23645",
-  blue: "#2962FF",
-  text: "#D1D4DC",
-  muted: "#787B86",
-  grid: "rgba(42,46,57,.6)",
-  line: "#2A2E39",
-  orange: "#FF9800",
-  purple: "#9C27B0",
-  ema9: "#2962FF",
-  ema21: "#FF9800",
-  ema50: "#E040FB",
-  bb: "#2196F3",
-  rsi: "#7E57C2",
-};
+import { PALETTE, useTheme, type Palette } from "./theme";
 const FRAMES = [1, 5, 15] as const;
 export type Frame = (typeof FRAMES)[number];
 const sec = (t: number) => Math.floor(t / 1000) as UTCTimestamp;
@@ -97,8 +81,6 @@ type Legend = {
   bbDn: number;
   vwap: number;
 };
-const volColor = (b: Bar) =>
-  b.c >= b.o ? "rgba(8,153,129,.5)" : "rgba(242,54,69,.5)";
 const n2 = (x: number) =>
   Number.isFinite(x) ? x.toFixed(2).replace(".", ",") : "—";
 // TradingView-style live chart: 1/5/15-minute candles, the indicators the strategies read,
@@ -116,6 +98,12 @@ export default function CandleChart({
   signals: Signal[];
   head?: ReactNode;
 }) {
+  const theme = useTheme(),
+    C = PALETTE[theme],
+    pal = useRef<Palette>(C);
+  pal.current = C;
+  const volColor = (b: Bar) =>
+    b.c >= b.o ? pal.current.volUp : pal.current.volDown;
   const host = useRef<HTMLDivElement>(null),
     chart = useRef<IChartApi | undefined>(undefined),
     candles = useRef<ISeriesApi<"Candlestick"> | undefined>(undefined),
@@ -166,34 +154,37 @@ export default function CandleChart({
     const c = createChart(el, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: "#131722" },
-        textColor: TV.muted,
+        background: { type: ColorType.Solid, color: pal.current.panel },
+        textColor: pal.current.muted,
         fontFamily:
           "-apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif",
         fontSize: 11,
         attributionLogo: false,
-        panes: { separatorColor: TV.line, enableResize: true },
+        panes: { separatorColor: pal.current.line, enableResize: true },
       },
-      grid: { vertLines: { color: TV.grid }, horzLines: { color: TV.grid } },
+      grid: {
+        vertLines: { color: pal.current.grid },
+        horzLines: { color: pal.current.grid },
+      },
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: {
-          color: "#758696",
+          color: pal.current.crosshair,
           style: LineStyle.Dashed,
-          labelBackgroundColor: "#363A45",
+          labelBackgroundColor: pal.current.label,
         },
         horzLine: {
-          color: "#758696",
+          color: pal.current.crosshair,
           style: LineStyle.Dashed,
-          labelBackgroundColor: "#363A45",
+          labelBackgroundColor: pal.current.label,
         },
       },
       rightPriceScale: {
-        borderColor: TV.line,
+        borderColor: pal.current.line,
         scaleMargins: { top: 0.1, bottom: 0.14 },
       },
       timeScale: {
-        borderColor: TV.line,
+        borderColor: pal.current.line,
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 8,
@@ -231,21 +222,21 @@ export default function CandleChart({
     });
     lines.current = {
       vol,
-      bbUp: line(TV.bb),
-      bbMid: line(TV.orange),
-      bbDn: line(TV.bb),
-      vwap: line("#E91E63", 2),
-      ema50: line(TV.ema50),
-      ema21: line(TV.ema21),
-      ema9: line(TV.ema9),
+      bbUp: line(pal.current.bb),
+      bbMid: line(pal.current.orange),
+      bbDn: line(pal.current.bb),
+      vwap: line(pal.current.vwap, 2),
+      ema50: line(pal.current.ema50),
+      ema21: line(pal.current.ema21),
+      ema9: line(pal.current.ema9),
     };
     const s = c.addSeries(CandlestickSeries, {
-      upColor: TV.up,
-      downColor: TV.down,
-      borderUpColor: TV.up,
-      borderDownColor: TV.down,
-      wickUpColor: TV.up,
-      wickDownColor: TV.down,
+      upColor: pal.current.up,
+      downColor: pal.current.down,
+      borderUpColor: pal.current.up,
+      borderDownColor: pal.current.down,
+      wickUpColor: pal.current.up,
+      wickDownColor: pal.current.down,
       priceFormat: fmt,
     });
     mark.current = createTextWatermark(c.panes()[0], {
@@ -254,7 +245,7 @@ export default function CandleChart({
       lines: [
         {
           text: "",
-          color: "rgba(120,123,134,.12)",
+          color: pal.current.watermark,
           fontSize: 64,
           fontStyle: "bold",
         },
@@ -287,13 +278,54 @@ export default function CandleChart({
       lines: [
         {
           text: `${title}, ${tf}`,
-          color: "rgba(120,123,134,.12)",
+          color: pal.current.watermark,
           fontSize: 64,
           fontStyle: "bold",
         },
       ],
     });
   }, [title, tf]);
+  // Theme switch recolors the canvas-drawn chart in place.
+  useEffect(() => {
+    const c = chart.current,
+      L = lines.current;
+    if (!c || !L) return;
+    c.applyOptions({
+      layout: {
+        background: { type: ColorType.Solid, color: C.panel },
+        textColor: C.muted,
+        panes: { separatorColor: C.line },
+      },
+      grid: { vertLines: { color: C.grid }, horzLines: { color: C.grid } },
+      crosshair: {
+        vertLine: { color: C.crosshair, labelBackgroundColor: C.label },
+        horzLine: { color: C.crosshair, labelBackgroundColor: C.label },
+      },
+      rightPriceScale: { borderColor: C.line },
+      timeScale: { borderColor: C.line },
+    });
+    L.ema9.applyOptions({ color: C.ema9 });
+    L.ema21.applyOptions({ color: C.ema21 });
+    L.ema50.applyOptions({ color: C.ema50 });
+    L.bbUp.applyOptions({ color: C.bb });
+    L.bbDn.applyOptions({ color: C.bb });
+    L.bbMid.applyOptions({ color: C.orange });
+    L.vwap.applyOptions({ color: C.vwap });
+    rsi.current?.applyOptions({ color: C.rsi });
+    for (const l of rsiLevels.current) l.applyOptions({ color: C.crosshair });
+    mark.current?.applyOptions({
+      lines: [
+        {
+          text: `${title}, ${tf}`,
+          color: C.watermark,
+          fontSize: 64,
+          fontStyle: "bold",
+        },
+      ],
+    });
+    paintAll();
+    setMinute(Date.now());
+  }, [theme]);
   const read = (i: number): Legend | null => {
     const bars = view.current,
       b = bars[i];
@@ -331,7 +363,7 @@ export default function CandleChart({
       rsi.current = c.addSeries(
         LineSeries,
         {
-          color: TV.rsi,
+          color: pal.current.rsi,
           lineWidth: 1,
           priceLineVisible: false,
           lastValueVisible: true,
@@ -358,7 +390,7 @@ export default function CandleChart({
       rsiLevels.current = [100 - p.level, 50, p.level].map((v) =>
         rsi.current!.createPriceLine({
           price: v,
-          color: v === 50 ? "rgba(120,123,134,.4)" : "rgba(120,123,134,.8)",
+          color: pal.current.crosshair,
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: false,
@@ -562,7 +594,11 @@ export default function CandleChart({
           position: d === 1 ? "belowBar" : "aboveBar",
           shape: "circle",
           size: 0.6,
-          color: focus!.approved ? (d === 1 ? TV.up : TV.down) : TV.orange,
+          color: focus!.approved
+            ? d === 1
+              ? pal.current.up
+              : pal.current.down
+            : pal.current.orange,
         });
       }
     }
@@ -574,7 +610,7 @@ export default function CandleChart({
         time: bucket(s.entryAt ?? s.t),
         position: buy ? "belowBar" : "aboveBar",
         shape: buy ? "arrowUp" : "arrowDown",
-        color: buy ? TV.up : TV.down,
+        color: buy ? pal.current.up : pal.current.down,
         size: 1.4,
         text: `${buy ? "Compra" : "Venda"} ${s.horizon}m`,
       });
@@ -583,7 +619,7 @@ export default function CandleChart({
           time: bucket(s.exitAt),
           position: "inBar",
           shape: "square",
-          color: s.result === "WIN" ? TV.blue : TV.muted,
+          color: s.result === "WIN" ? pal.current.blue : pal.current.muted,
           text:
             s.result === "WIN"
               ? "Ganhou"
@@ -698,29 +734,29 @@ export default function CandleChart({
             {studies.has("ema") && (
               <div className="tv-row">
                 <span>EMA 9 21 50</span>
-                <em style={{ color: TV.ema9 }}>{price(lg.ema9)}</em>
-                <em style={{ color: TV.ema21 }}>{price(lg.ema21)}</em>
-                <em style={{ color: TV.ema50 }}>{price(lg.ema50)}</em>
+                <em style={{ color: C.ema9 }}>{price(lg.ema9)}</em>
+                <em style={{ color: C.ema21 }}>{price(lg.ema21)}</em>
+                <em style={{ color: C.ema50 }}>{price(lg.ema50)}</em>
               </div>
             )}
             {studies.has("bb") && (
               <div className="tv-row">
                 <span>BB 20 {String(p.bb).replace(".", ",")}</span>
-                <em style={{ color: TV.orange }}>{price(lg.bbMid)}</em>
-                <em style={{ color: TV.bb }}>{price(lg.bbUp)}</em>
-                <em style={{ color: TV.bb }}>{price(lg.bbDn)}</em>
+                <em style={{ color: C.orange }}>{price(lg.bbMid)}</em>
+                <em style={{ color: C.bb }}>{price(lg.bbUp)}</em>
+                <em style={{ color: C.bb }}>{price(lg.bbDn)}</em>
               </div>
             )}
             {studies.has("vwap") && (
               <div className="tv-row">
                 <span>VWAP</span>
-                <em style={{ color: "#E91E63" }}>{price(lg.vwap)}</em>
+                <em style={{ color: C.vwap }}>{price(lg.vwap)}</em>
               </div>
             )}
             {studies.has("rsi") && (
               <div className="tv-row">
                 <span>RSI {p.rsi}</span>
-                <em style={{ color: TV.rsi }}>{n2(lg.rsi)}</em>
+                <em style={{ color: C.rsi }}>{n2(lg.rsi)}</em>
               </div>
             )}
             {studies.has("vol") && (

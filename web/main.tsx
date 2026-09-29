@@ -7,6 +7,7 @@ import {
   ArrowUpRight,
   BarChart3,
   Box,
+  List,
   ChevronDown,
   CandlestickChart,
   Download,
@@ -19,6 +20,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import Auth from "./Auth";
+import ThemeToggle from "./ThemeToggle";
 import { lastMove, liveBar, pushTick, useTicks } from "./live";
 import { FAMILY_TEXT, directionText } from "./studies";
 import CandleChart from "./CandleChart";
@@ -206,6 +208,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
             </span>
             <span className="clock">{clock(serverNow)}</span>
             <span className="who">{user.name.split(" ")[0]}</span>
+            <ThemeToggle />
             <button className="icon" onClick={onLogout} aria-label="Sair">
               <LogOut size={17} />
             </button>
@@ -312,7 +315,7 @@ function TickerTape({
     </div>
   );
 }
-type SideTab = "strat" | "map" | "news";
+type SideTab = "strat" | "list" | "map" | "news";
 const LOGO: Record<string, string> = {
   BTCUSDT: "#f7931a",
   ETHUSDT: "#627eea",
@@ -469,6 +472,7 @@ function TradeView({
       .slice(0, 6);
   const SIDE: { id: SideTab; label: string; icon: typeof Activity }[] = [
     { id: "strat", label: "Estratégias", icon: FlaskConical },
+    { id: "list", label: "Ativos", icon: List },
     { id: "map", label: "Mapa 3D", icon: Box },
     { id: "news", label: "Notícias", icon: Newspaper },
   ];
@@ -493,7 +497,6 @@ function TradeView({
         )}
       </section>
       <aside className="tv-side">
-        <Watchlist state={state} selected={selected} onSelect={onSelect} />
         <div className="tv-details">
           <div className="tv-quote">
             <div>
@@ -511,7 +514,10 @@ function TradeView({
               </span>
             </div>
           </div>
-          <Expiries state={state} asset={asset} fresh={fresh} now={now} />
+          <section className="side-block">
+            <h3>Sinal por expiração</h3>
+            <Expiries state={state} asset={asset} fresh={fresh} now={now} />
+          </section>
           <div className="tv-tabs" role="tablist">
             {SIDE.map((t) => (
               <button
@@ -525,6 +531,9 @@ function TradeView({
               </button>
             ))}
           </div>
+          {side === "list" && (
+            <Watchlist state={state} selected={selected} onSelect={onSelect} />
+          )}
           {side === "strat" && (
             <StrategyPanel
               evals={evals}
@@ -660,10 +669,9 @@ function StrategyPanel({
     approved = evals.filter((e) => e.approved).length,
     be = lab?.breakEven ?? 0.5556;
   return (
-    <section className="panel strat-panel">
+    <section className="strat-panel">
       <header className="panel-head">
         <div>
-          <h2>Estratégias</h2>
           <span className="muted">
             {evals.length
               ? `${approved} aprovada(s) de ${evals.length} testadas neste ativo`

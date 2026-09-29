@@ -1,14 +1,13 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
-import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { PALETTE, useTheme } from "./theme";
 // A slowly drifting field of 3D candlesticks: several price paths receding into fog.
 // Purely decorative; pauses when hidden and stays still for reduced-motion users.
 export default function Scene3D({ intensity = 1 }: { intensity?: number }) {
   const host = useRef<HTMLDivElement>(null);
+  const theme = useTheme();
   useEffect(() => {
+    const P = PALETTE[theme];
     const el = host.current;
     if (!el) return;
     let renderer: THREE.WebGLRenderer;
@@ -17,10 +16,11 @@ export default function Scene3D({ intensity = 1 }: { intensity?: number }) {
     } catch {
       return;
     }
+    renderer.setClearColor(P.fog, 1);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     el.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x131722, 16, 60);
+    scene.fog = new THREE.Fog(P.fog, 16, 60);
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 120);
     camera.position.set(0, 7.5, 16);
     camera.lookAt(0, 1, -12);
@@ -82,7 +82,7 @@ export default function Scene3D({ intensity = 1 }: { intensity?: number }) {
     const group = new THREE.Group();
     group.add(body, wick);
     scene.add(group);
-    const grid = new THREE.GridHelper(120, 60, 0x2a2e39, 0x1e222d);
+    const grid = new THREE.GridHelper(120, 60, P.grid3d[0], P.grid3d[1]);
     grid.position.y = -3.2;
     scene.add(grid);
     const place = (offset: number) => {
@@ -106,22 +106,10 @@ export default function Scene3D({ intensity = 1 }: { intensity?: number }) {
       body.instanceMatrix.needsUpdate = true;
       wick.instanceMatrix.needsUpdate = true;
     };
-    const composer = new EffectComposer(renderer);
-    composer.addPass(new RenderPass(scene, camera));
-    composer.addPass(
-      new UnrealBloomPass(
-        new THREE.Vector2(256, 256),
-        0.9 * intensity,
-        0.5,
-        0.3,
-      ),
-    );
-    composer.addPass(new OutputPass());
     const resize = () => {
       const w = el.clientWidth || 1,
         h = el.clientHeight || 1;
       renderer.setSize(w, h, false);
-      composer.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
     };
@@ -141,22 +129,21 @@ export default function Scene3D({ intensity = 1 }: { intensity?: number }) {
       place(t * 0.9 * intensity);
       camera.position.x = Math.sin(t * 0.08) * 2.2;
       camera.lookAt(0, 1, -12);
-      composer.render();
+      renderer.render(scene, camera);
     };
     if (still) {
       place(0);
-      composer.render();
+      renderer.render(scene, camera);
     } else frame = requestAnimationFrame(loop);
     return () => {
       cancelAnimationFrame(frame);
       ro.disconnect();
       io.disconnect();
-      composer.dispose();
       renderer.dispose();
       body.geometry.dispose();
       wick.geometry.dispose();
       el.removeChild(renderer.domElement);
     };
-  }, [intensity]);
+  }, [intensity, theme]);
   return <div className="scene3d" ref={host} aria-hidden="true" />;
 }
