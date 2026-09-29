@@ -3,6 +3,12 @@ import { config, weights } from "./config.js";
 import type { Decision, Features, Signal, Quote } from "./types.js";
 import { predict, type ModelRegistry } from "./models.js";
 import type { StrategyPick } from "./lab.js";
+// A historical edge never overrides a contrary current trend/timeframe.
+export function contraryContext(f: Features, direction: number): boolean {
+  return [f.groups.trend, f.groups.mtf, f.details.micro, f.details.macro].some(
+    (v) => typeof v === "number" && v * direction < 0,
+  );
+}
 export function evaluate(
   f: Features,
   registry: ModelRegistry,
@@ -52,6 +58,8 @@ export function evaluate(
         state: "ANÁLISE INDISPONÍVEL",
         reason: "NOTÍCIAS / IA NÃO CONFIGURADAS OU INDISPONÍVEIS",
       };
+    if (contraryContext(f, direction))
+      return { ...d, reason: "TENDÊNCIA / TIMEFRAME CONTRÁRIO À ENTRADA" };
     if (Number(f.details.spreadBps) > 10)
       return { ...d, reason: "SPREAD ELEVADO" };
     if (Number(f.details.atrPct) > 0.02 || Number(f.details.atrPct) < 0.00005)
@@ -188,6 +196,8 @@ export function strategyDecision(
     favorable: [e.label],
     contrary: [],
   };
+  if (contraryContext(f, pick.direction === "COMPRA" ? 1 : -1))
+    return { ...base, reason: "TENDÊNCIA / TIMEFRAME CONTRÁRIO À ENTRADA" };
   if (Number(f.details.spreadBps) > 10)
     return { ...base, reason: "SPREAD ELEVADO" };
   if (Number(f.details.atrPct) > 0.02 || Number(f.details.atrPct) < 0.00005)

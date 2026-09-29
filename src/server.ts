@@ -282,19 +282,30 @@ wss.on("connection", (ws, req) => {
   ws.on("error", (e) => log.warn({ err: e }, "dashboard socket"));
 });
 // Forming 1m candle of every asset built from the live trades, pushed 4x per second.
-let lastTicks = "";
+let lastTicks = "",
+  lastTickSentAt = 0;
 function liveTicks() {
   if (!wss.clients.size) return;
   const k: Record<string, number[]> = {};
   for (const s of market.states.values()) {
-    if (!s.trade || market.rest.now() - s.trade.received > config.STALE_MS)
-      continue;
+    const now = market.rest.now();
+    const tradeFresh =
+      s.trade &&
+      now - s.trade.received <= config.STALE_MS &&
+      now - s.trade.t <= config.STALE_MS;
+    const candleFresh =
+      s.forming && now - (s.formingAt ?? 0) <= config.STALE_MS;
+    if (!tradeFresh && !candleFresh) continue;
     const b = liveCandle(s);
     if (b) k[s.symbol] = [b.t, b.o, b.h, b.l, b.c, b.v, b.buy];
   }
   const body = JSON.stringify(k);
-  if (body === lastTicks) return;
+  const sentAt = market.rest.now();
+  // Periodic snapshot also initializes new/reconnected viewers of quiet pairs.
+  // OHLC is unchanged; this heartbeat never invents a price movement.
+  if (body === lastTicks && sentAt - lastTickSentAt < 1000) return;
   lastTicks = body;
+  lastTickSentAt = sentAt;
   const payload = `{"type":"tick","t":${market.rest.now()},"k":${body}}`;
   for (const ws of wss.clients)
     if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 250000)

@@ -1,3 +1,4 @@
+import { contextAllows, structuralStrategies } from "./price-context.js";
 import type { Candle, Horizon } from "./types.js";
 // Rule-based strategies on closed 1m candles, validated by chronological backtest.
 // Selection happens on the in-sample slice only; approval uses the untouched out-of-sample slice.
@@ -315,7 +316,17 @@ export function catalog(): StrategySpec[] {
         },
       ),
     );
-  return out;
+  out.push(...structuralStrategies());
+  return out.map((spec) => ({
+    ...spec,
+    id: spec.id.includes(":ctx2")
+      ? spec.id
+      : spec.id.replace(/:(seguir|reverter)$/, ":ctx2:$1"),
+    signal: (s, i) => {
+      const d = spec.signal(s, i);
+      return contextAllows(s, i, d) ? d : 0;
+    },
+  }));
 }
 // One-sided Wilson lower bound of the win rate.
 export function wilson(wins: number, n: number, z: number) {

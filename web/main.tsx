@@ -211,9 +211,15 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
           </div>
           <TickerTape state={state} onOpen={open} />
           <div className="top-right">
-            <span className={`conn ${fresh ? "live" : "off"}`}>
+            <span
+              className={`conn ${fresh && asset?.feed === "CONECTADO" ? "live" : "off"}`}
+            >
               <i />
-              {fresh ? "Ao vivo" : "Reconectando"}
+              {!fresh
+                ? "Reconectando"
+                : asset?.feed === "CONECTADO"
+                  ? "Ao vivo"
+                  : "Dados indisponíveis"}
             </span>
             <span className="clock">{clock(serverNow)}</span>
             <span className="who">{user.name.split(" ")[0]}</span>
@@ -491,6 +497,12 @@ function TradeView({
           now={now}
           fresh={fresh}
         />
+        {asset.symbol === "EURUSDT" && (
+          <p className="notice">
+            Fonte: Binance spot · EUR/USDT (Euro/Tether). Este gráfico não é
+            Forex EUR/USD.
+          </p>
+        )}
         {asset.reasons.length > 0 && (
           <p className="notice">{sentence(asset.reasons.join("; "))}</p>
         )}
@@ -956,7 +968,7 @@ function HistoryView({ state }: { state: State | null }) {
                     : s.result === "LOSS"
                       ? "Perdeu"
                       : s.result === "NEUTRO"
-                        ? "Empate"
+                        ? "Neutro (faixa de tolerância)"
                         : label[s.status] || s.status}
                 </td>
               </tr>
@@ -1125,7 +1137,7 @@ function SystemView({
         </div>
         <div>
           <dt>Mercado</dt>
-          <dd>Binance spot ao vivo; EUR/USD vem do par EUR/USDT</dd>
+          <dd>Binance spot · EUR/USDT é Euro/Tether, não Forex EUR/USD</dd>
         </div>
         <div>
           <dt>Notícias</dt>

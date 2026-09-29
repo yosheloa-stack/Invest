@@ -638,7 +638,7 @@ export default function CandleChart({
               ? "Ganhou"
               : s.result === "LOSS"
                 ? "Perdeu"
-                : "Empate",
+                : "Neutro",
         });
     }
     const seen = new Set<string>();

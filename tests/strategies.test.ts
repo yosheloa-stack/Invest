@@ -59,9 +59,22 @@ test("random walk: no strategy is approved (no false edge)", () => {
   assert.ok(ev.length > 20);
   assert.equal(ev.filter((x) => x.approved).length, 0);
 });
-test("planted mean reversion is detected out of sample in the fading direction", () => {
+test("statistical evaluator detects planted mean reversion independently of context admission", () => {
   const s = buildSeries(walk(43200, 11, 0.6));
-  const ev = evaluateSymbol("TESTUSDT", s, [5], options).filter(
+  // Raw impulse fixtures isolate the statistical evaluator. The production
+  // catalog deliberately requires a confirmed context for reversal signals.
+  const specs = [1, -1].map((d) => ({
+    id: `raw:impulse:${d === 1 ? "seguir" : "reverter"}`,
+    family: "raw-impulse",
+    label: "test fixture",
+    signal: (s: ReturnType<typeof buildSeries>, i: number) => {
+      const r = s.c[i] / s.c[i - 3] - 1;
+      return (
+        Math.abs(r) > 1.5 * s.sigma[i] * Math.sqrt(3) ? Math.sign(r) * d : 0
+      ) as -1 | 0 | 1;
+    },
+  }));
+  const ev = evaluateSymbol("TESTUSDT", s, [5], options, specs).filter(
     (x) => x.approved,
   );
   assert.ok(ev.length > 0);
