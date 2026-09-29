@@ -17,7 +17,7 @@ Não precisa contratar PostgreSQL. O banco é um arquivo criado automaticamente 
 SQLITE_PATH é opcional; padrão ./data/scanner.sqlite. Não configure DATABASE_URL, DATABASE_SSL ou certificado: esta versão não usa essas opções. Variáveis antigas de PostgreSQL são ignoradas e podem ser removidas. Não existe senha padrão embutida.
 
 5. Reinicie. Tanto npm start quanto MAIN=square-start.mjs usam o mesmo inicializador. Ele valida o login e inicia na porta 80, em 0.0.0.0. Procure nos logs “SQLite inicializado”. “dashboard iniciado” sozinho não confirma conexão aos feeds.
-6. Abra o endereço HTTPS. A janela de login do navegador pede o usuário e senha que você escolheu. Espere o histórico e o feed carregarem. Modelos e notícias ausentes aparecem explicitamente; não são fabricados sinais.
+6. Abra o endereço HTTPS. Entre com DASHBOARD_USER no campo e-mail e DASHBOARD_PASSWORD na senha (conta de administrador), ou crie uma conta nova na própria tela. Espere o histórico e o feed carregarem. Modelos e notícias ausentes aparecem explicitamente; não são fabricados sinais.
 
 ## Backup pelo celular
 

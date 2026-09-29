@@ -6,17 +6,23 @@ export class Store {
     pool;
     healthy = false;
     constructor(path = config.SQLITE_PATH) {
-        this.pool = new SQLiteConnection(path, () => { this.healthy = false; });
+        this.pool = new SQLiteConnection(path, () => {
+            this.healthy = false;
+        });
     }
     async init() {
         this.pool.acquireCollector();
         const version = Number(this.pool.query("PRAGMA user_version").rows[0]?.user_version || 0);
-        if (version === 0 && this.pool.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").rowCount)
+        if (version === 0 &&
+            this.pool.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").rowCount)
             throw Error("Arquivo SQLite existente com schema desconhecido; preserve-o e use outro SQLITE_PATH");
-        if (version > 1)
+        if (version > 2)
             throw Error("Schema SQLite mais novo que esta aplicação");
-        const migration = await readFile("migrations/001_initial.sql", "utf8");
-        this.pool.transaction(() => this.pool.exec(migration));
+        const migrations = [
+            await readFile("migrations/001_initial.sql", "utf8"),
+            await readFile("migrations/002_accounts.sql", "utf8"),
+        ];
+        this.pool.transaction(() => migrations.forEach((m) => this.pool.exec(m)));
         this.healthy = true;
     }
     async ping() {
@@ -98,6 +104,12 @@ export class Store {
                 volatility: x.volatility,
             }
             : null;
+    }
+    // Snapshots and observations grow by the second; keep only the recent window on disk.
+    async prune(now, days) {
+        const before = now - days * 86400000;
+        this.pool.query("DELETE FROM snapshots WHERE t<$1", [before]);
+        this.pool.query("DELETE FROM observations WHERE t<$1 AND status<>'PENDING'", [before]);
     }
     async exportRows() {
         return (await this.pool.query("SELECT symbol,horizon,t,due,final_t,features,return,label FROM observations WHERE status='SETTLED' ORDER BY t,symbol,horizon")).rows;

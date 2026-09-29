@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { config, symbols } from "./config.js";
 import type { Store } from "./store.js";
-import type { NewsEvent } from "./types.js";
+import type { NewsClassification, NewsEvent } from "./types.js";
 import { log } from "./log.js";
 const article = z.object({
   title: z.string().min(3).max(1000),
@@ -90,6 +90,115 @@ export function isDuplicate(a: NewsEvent, b: NewsEvent) {
       ))
   );
 }
+// Free public crypto feeds used when no NEWS_URL is configured.
+export const RSS_FEEDS = [
+  ["CoinDesk", "https://www.coindesk.com/arc/outboundfeeds/rss/"],
+  ["Cointelegraph", "https://cointelegraph.com/rss"],
+  ["Decrypt", "https://decrypt.co/feed"],
+  ["The Block", "https://www.theblock.co/rss.xml"],
+] as const;
+const decode = (s: string) =>
+  s
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/\s+/g, " ")
+    .trim();
+export function parseRss(xml: string, source: string) {
+  const out: z.infer<typeof article>[] = [];
+  for (const item of xml.match(/<item[\s>][\s\S]*?<\/item>/g) || []) {
+    const tag = (name: string) =>
+      decode(item.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`))?.[1] || "");
+    const date = Date.parse(tag("pubDate") || tag("dc:date"));
+    const parsed = article.safeParse({
+      title: tag("title").slice(0, 1000),
+      content: tag("description").slice(0, 30000),
+      source,
+      url: tag("link") || tag("guid"),
+      publishedAt: Number.isFinite(date) ? new Date(date).toISOString() : "",
+    });
+    if (parsed.success) out.push(parsed.data);
+  }
+  return out;
+}
+async function rssArticles() {
+  const all: z.infer<typeof article>[] = [];
+  let ok = 0;
+  for (const [source, url] of RSS_FEEDS)
+    try {
+      const r = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0 YoshScanner/2" },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!r.ok) throw Error(`HTTP ${r.status}`);
+      all.push(...parseRss(await r.text(), source).slice(0, 25));
+      ok++;
+    } catch (e) {
+      log.warn({ source, err: e }, "feed RSS indisponível");
+    }
+  if (!ok) throw Error("Nenhum feed RSS respondeu");
+  return all;
+}
+const ASSET_WORDS: Record<string, RegExp> = {
+  BTC: /\b(bitcoin|btc)\b/i,
+  ETH: /\b(ether(eum)?|eth)\b/i,
+  SOL: /\b(solana|sol)\b/i,
+  BNB: /\b(bnb|binance coin)\b/i,
+  XRP: /\b(xrp|ripple)\b/i,
+  DOGE: /\b(dogecoin|doge)\b/i,
+  ADA: /\b(cardano|ada)\b/i,
+  AVAX: /\b(avalanche|avax)\b/i,
+  LTC: /\b(litecoin|ltc)\b/i,
+  LINK: /\b(chainlink)\b/i,
+  EUR: /\b(euro|ecb|eurozone)\b/i,
+};
+const POSITIVE =
+  /\b(surge|surges|rally|rallies|soar|soars|jump|jumps|gain|gains|record high|all-time high|approve|approved|approval|inflows?|bullish|adopt|adoption|partnership|launch|upgrade|rebound|breakout)\b/gi;
+const NEGATIVE =
+  /\b(plunge|plunges|crash|crashes|drop|drops|fall|falls|slump|hack|hacked|exploit|lawsuit|sue|sues|ban|bans|outflows?|bearish|liquidat\w*|sell-off|selloff|fraud|delist\w*|reject|rejected|decline|declines)\b/gi;
+// Used only when no LLM is configured: a transparent lexical guess, marked as low confidence.
+export function keywordClassification(n: {
+  title: string;
+  content: string;
+}): NewsClassification {
+  const text = `${n.title} ${n.content}`;
+  const assets = Object.entries(ASSET_WORDS)
+    .filter(([, re]) => re.test(text))
+    .map(([k]) => k);
+  const pos = (text.match(POSITIVE) || []).length,
+    neg = (text.match(NEGATIVE) || []).length;
+  const type: NewsClassification["event_type"] = /\b(sec|regulat\w*|law|bill)\b/i.test(text)
+    ? "regulation"
+    : /\betf\b/i.test(text)
+      ? "etf"
+      : /\b(hack\w*|exploit\w*)\b/i.test(text)
+        ? "hack"
+        : /\b(fed|fomc|powell)\b/i.test(text)
+          ? "fed"
+          : /\b(inflation|cpi)\b/i.test(text)
+            ? "inflation"
+            : /\bliquidat/i.test(text)
+              ? "liquidations"
+              : /\b(stablecoin|usdt|usdc|tether)\b/i.test(text)
+                ? "stablecoin"
+                : "other";
+  return {
+    assets: assets.length ? assets : ["MARKET"],
+    sentiment: pos && neg ? "mixed" : pos ? "positive" : neg ? "negative" : "neutral",
+    impact_score: Math.min(10, 2 + 2 * Math.abs(pos - neg) + (type === "other" ? 0 : 2)),
+    relevance: assets.length ? 0.6 : 0.3,
+    confidence: 0.3,
+    expected_horizon: "short_term",
+    event_type: type,
+    summary: n.title,
+    reasoning_summary: `Classificação automática por palavras-chave (sem IA configurada): ${pos} termo(s) positivo(s), ${neg} negativo(s).`,
+  };
+}
 export class NewsIntelligenceEngine {
   events: NewsEvent[] = [];
   status = "FONTE NÃO CONFIGURADA";
@@ -175,22 +284,21 @@ export class NewsIntelligenceEngine {
   }
   async poll() {
     if (this.stopped) return;
-    if (!config.NEWS_URL) {
-      this.status = "FONTE NÃO CONFIGURADA";
-      return;
-    }
     try {
-      const r = await fetch(config.NEWS_URL, {
-        headers: config.NEWS_API_KEY
-          ? { Authorization: `Bearer ${config.NEWS_API_KEY}` }
-          : {},
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!r.ok) throw Error(`News HTTP ${r.status}`);
-      const articles = z
-        .array(article)
-        .max(100)
-        .parse(await r.json());
+      let articles: z.infer<typeof article>[];
+      if (config.NEWS_URL) {
+        const r = await fetch(config.NEWS_URL, {
+          headers: config.NEWS_API_KEY
+            ? { Authorization: `Bearer ${config.NEWS_API_KEY}` }
+            : {},
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!r.ok) throw Error(`News HTTP ${r.status}`);
+        articles = z
+          .array(article)
+          .max(100)
+          .parse(await r.json());
+      } else articles = await rssArticles();
       let failed = false;
       for (const a of articles) {
         const publishedAt = Date.parse(a.publishedAt),
@@ -230,6 +338,12 @@ export class NewsIntelligenceEngine {
         this.events.unshift(n);
       }
       // Retry a bounded number of pending classifications; a failed event cannot become ready silently.
+      if (!this.configured)
+        for (const n of this.events.filter((n) => !n.classification)) {
+          n.classification = keywordClassification(n);
+          n.availableAt = Date.now();
+          await this.store.saveNews(n);
+        }
       if (this.configured)
         for (const n of this.events
           .filter(
@@ -244,7 +358,7 @@ export class NewsIntelligenceEngine {
         (n) => !n.classification && Date.now() - n.receivedAt < 3600000,
       );
       this.status = !this.configured
-        ? "IA NÃO CONFIGURADA"
+        ? "OK · CLASSIFICAÇÃO POR PALAVRAS-CHAVE (SEM IA)"
         : failed
           ? "CLASSIFICAÇÃO INDISPONÍVEL"
           : "OK";
@@ -401,19 +515,41 @@ export class NewsIntelligenceEngine {
   async categories() {
     const asOf = Date.now();
     const rows = this.store.pool.query(
-      `SELECT r.symbol,r.horizon,json_extract(n.body,'$.classification.event_type') AS category,r.return AS ret,r.confirmed FROM reactions r JOIN news n ON n.id=r.news_id WHERE r.status='MEASURED' AND r.end_t<=$1 AND n.available_at<=$1`, [asOf]
+      `SELECT r.symbol,r.horizon,json_extract(n.body,'$.classification.event_type') AS category,r.return AS ret,r.confirmed FROM reactions r JOIN news n ON n.id=r.news_id WHERE r.status='MEASURED' AND r.end_t<=$1 AND n.available_at<=$1`,
+      [asOf],
     ).rows;
     const groups = new Map<string, typeof rows>();
     for (const row of rows) {
-      const key = JSON.stringify([row.symbol,row.horizon,row.category]);
-      const group = groups.get(key) || []; group.push(row); groups.set(key,group);
+      const key = JSON.stringify([row.symbol, row.horizon, row.category]);
+      const group = groups.get(key) || [];
+      group.push(row);
+      groups.set(key, group);
     }
-    this.historical = [...groups.values()].map(group => {
-      let mean = 0, m2 = 0, n = 0;
-      for (const row of group) { n++; const delta = row.ret-mean; mean += delta/n; m2 += delta*(row.ret-mean); }
-      const confirmed = group.filter(r => r.confirmed != null);
-      return {symbol:group[0]!.symbol,horizon:group[0]!.horizon,category:group[0]!.category,count:n,mean_return:mean,std_return:n>1?Math.sqrt(m2/(n-1)):null,confirmation_rate:confirmed.length?confirmed.filter(r=>r.confirmed).length/confirmed.length:null};
-    }).sort((a,b)=>b.count-a.count);
+    this.historical = [...groups.values()]
+      .map((group) => {
+        let mean = 0,
+          m2 = 0,
+          n = 0;
+        for (const row of group) {
+          n++;
+          const delta = row.ret - mean;
+          mean += delta / n;
+          m2 += delta * (row.ret - mean);
+        }
+        const confirmed = group.filter((r) => r.confirmed != null);
+        return {
+          symbol: group[0]!.symbol,
+          horizon: group[0]!.horizon,
+          category: group[0]!.category,
+          count: n,
+          mean_return: mean,
+          std_return: n > 1 ? Math.sqrt(m2 / (n - 1)) : null,
+          confirmation_rate: confirmed.length
+            ? confirmed.filter((r) => r.confirmed).length / confirmed.length
+            : null,
+        };
+      })
+      .sort((a, b) => b.count - a.count);
     this.historicalAsOf = asOf;
     return this.historical;
   }

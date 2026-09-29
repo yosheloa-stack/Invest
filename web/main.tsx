@@ -1,234 +1,53 @@
-import React, { useEffect, useState } from "react";
+import "@fontsource-variable/sora";
+import "./style.css";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Activity,
   ArrowDownRight,
   ArrowUpRight,
-  ArrowRight,
   BarChart3,
-  Check,
-  ChevronRight,
-  Clock3,
-  Database,
+  CandlestickChart,
   Download,
   ExternalLink,
-  Layers3,
+  FlaskConical,
+  History,
+  LogOut,
   Newspaper,
-  Radio,
-  ShieldCheck,
-  Target,
+  Server,
   WifiOff,
-  X,
 } from "lucide-react";
-import "./style.css";
-type Signal = {
-  id: string;
-  symbol: string;
-  t: number;
-  horizon: number;
-  direction: string;
-  status: string;
-  entryLow: number;
-  entryHigh: number;
-  expires: number;
-  probability: number;
-  entry?: number;
-  exit?: number;
-  result?: string;
-  return?: number;
-  modelId: string;
-};
-type Forecast = {
-  horizon: number;
-  state: string;
-  reason: string;
-  probability: number | null;
-  favorable: string[];
-  contrary: string[];
-  signal?: Signal;
-};
-type Asset = {
-  symbol: string;
-  price: number | null;
-  change: number | null;
-  feed: string;
-  reasons: string[];
-  eventTime: number | null;
-  chart: { t: number; p: number }[];
-  indicators: Record<string, number> | null;
-  features: Record<string, number | string | boolean> | null;
-  groups: Record<string, number> | null;
-  forecasts: Forecast[];
-};
-type Metric = {
-  count: number;
-  wins: number;
-  losses: number;
-  neutrals: number;
-  winRate: number | null;
-  maxLossStreak: number;
-  paperUnits: number;
-};
-type News = {
-  id: string;
-  title: string;
-  url: string;
-  source: string;
-  publishedAt: number;
-  availableAt: number | null;
-  classification: null | {
-    assets: string[];
-    sentiment: string;
-    impact_score: number;
-    confidence: number;
-    summary: string;
-    reasoning_summary: string;
-  };
-  reactions: {
-    symbol: string;
-    horizon: number;
-    return: number | null;
-    status: string;
-  }[];
-};
-type State = {
-  time: number;
-  mode: string;
-  sniper: boolean;
-  database: string;
-  newsStatus: string;
-  newsCapabilities: { semanticDedup: string; classification: string };
-  newsLastSuccess: number;
-  assets: Asset[];
-  metrics:
-    | null
-    | (Metric & {
-        total: number;
-        pending: number;
-        noData: number;
-        invalidated: number;
-        payout: number;
-        breakEven: number;
-        byAsset: Record<string, Metric>;
-        byHorizon: Record<string, Metric>;
-        byHour: Record<string, Metric>;
-        byStrategy: Record<string, Metric>;
-        byNews: Record<string, Metric>;
-        calibration: {
-          from: number;
-          to: number;
-          count: number;
-          predicted: number | null;
-          observed: number | null;
-        }[];
-        observations: { status: string; count: number }[];
-      });
-  signals: Signal[];
-  news: News[];
-  models: {
-    id: string;
-    symbol: string;
-    horizon: number;
-    sampleCount: number;
-    testCount: number;
-    testEnd: number;
-    metrics: { brier: number; ece: number; logLoss: number };
-  }[];
-  modelErrors: Record<string, string>;
-  strategies?: Lab;
-};
-type Tally = {
-  trades: number;
-  wins: number;
-  losses: number;
-  winRate: number | null;
-  lower: number | null;
-};
-type Lab = {
-  status: string;
-  error: string | null;
-  updatedAt: number | null;
-  historyFrom: number | null;
-  historyTo: number | null;
-  breakEven: number;
-  minTrades: number;
-  sources?: Record<string, string>;
-  tested: number;
-  approved: number;
-  evaluations: {
-    symbol: string;
-    horizon: number;
-    id: string;
-    label: string;
-    inSample: Tally;
-    outOfSample: Tally;
-    halves: [Tally, Tally];
-    approved: boolean;
-    reason: string;
-  }[];
-};
-const money = (n: number | null | undefined) =>
-  n == null
-    ? "—"
-    : new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency: "USD",
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }).format(n);
-const percent = (n: number | null | undefined) =>
-  n == null ? "—" : `${(n * 100).toFixed(2)}%`;
-const number = (n: number | null | undefined) =>
-  n == null ? "—" : n.toLocaleString("pt-BR", { maximumFractionDigits: 3 });
-const time = (n: number) =>
-  new Date(n).toLocaleTimeString("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-const names: Record<string, string> = {
-  trend: "Tendência",
-  momentum: "Momentum",
-  structure: "Estrutura",
-  volume: "Volume",
-  flow: "Trades + livro parcial",
-  mtf: "Multi-timeframe",
-  news: "Notícias",
-  reaction: "Reação observada",
-};
-function Spark({ points }: { points: { t: number; p: number }[] }) {
-  if (points.length < 2)
-    return <div className="empty-chart">Aguardando candles reais</div>;
-  const min = Math.min(...points.map((p) => p.p)),
-    max = Math.max(...points.map((p) => p.p));
-  const coords = points
-    .map(
-      (p, i) =>
-        `${(i / (points.length - 1)) * 600},${85 - ((p.p - min) / (max - min || 1)) * 70}`,
-    )
-    .join(" ");
-  return (
-    <svg
-      className="spark"
-      viewBox="0 0 600 100"
-      preserveAspectRatio="none"
-      role="img"
-      aria-label="Preços de fechamento dos últimos 60 candles de um minuto"
-    >
-      <line x1="0" y1="90" x2="600" y2="90" />
-      <polyline points={coords} />
-    </svg>
-  );
-}
-function App() {
+import Auth from "./Auth";
+import CandleChart from "./CandleChart";
+import SignalDock from "./SignalDock";
+import {
+  api,
+  clock,
+  countdown,
+  sentence,
+  COIN_NAMES,
+  pair,
+  pct,
+  price,
+  ticker,
+} from "./format";
+import type { Evaluation, Lab, Metric, News, State, User } from "./types";
+const Scene3D = lazy(() => import("./Scene3D"));
+type Tab = "trade" | "lab" | "history" | "news" | "stats" | "system";
+const TABS: { id: Tab; label: string; icon: typeof Activity }[] = [
+  { id: "trade", label: "Operar", icon: CandlestickChart },
+  { id: "lab", label: "Estratégias", icon: FlaskConical },
+  { id: "history", label: "Histórico", icon: History },
+  { id: "news", label: "Notícias", icon: Newspaper },
+  { id: "stats", label: "Desempenho", icon: BarChart3 },
+  { id: "system", label: "Sistema", icon: Server },
+];
+function useLiveState(enabled: boolean) {
   const [state, setState] = useState<State | null>(null),
     [connected, setConnected] = useState(false),
-    [lastMessage, setLastMessage] = useState(0),
-    [now, setNow] = useState(Date.now()),
-    [tab, setTab] = useState("scanner"),
-    [selected, setSelected] = useState("BTCUSDT"),
-    [group, setGroup] = useState("byAsset");
+    [last, setLast] = useState(0);
   useEffect(() => {
+    if (!enabled) return;
     let stop = false,
       ws: WebSocket | undefined,
       retry: ReturnType<typeof setTimeout>;
@@ -240,11 +59,10 @@ function App() {
       ws.onopen = () => setConnected(true);
       ws.onmessage = (e) => {
         try {
-          const data = JSON.parse(e.data);
-          setState(data);
-          setLastMessage(Date.now());
+          setState(JSON.parse(e.data));
+          setLast(Date.now());
         } catch {
-          setConnected(false);
+          /* ignore malformed frame */
         }
       };
       ws.onclose = () => {
@@ -254,892 +72,758 @@ function App() {
       ws.onerror = () => ws?.close();
     };
     open();
-    const tick = setInterval(() => setNow(Date.now()), 1000);
     return () => {
       stop = true;
-      clearInterval(tick);
       clearTimeout(retry);
       ws?.close();
     };
+  }, [enabled]);
+  return { state, connected, last };
+}
+function useLab(enabled: boolean) {
+  const [lab, setLab] = useState<Lab | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let stop = false;
+    const load = () =>
+      api<Lab>("/api/strategies")
+        .then((x) => !stop && setLab(x))
+        .catch(() => undefined);
+    void load();
+    const t = setInterval(load, 60000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [enabled]);
+  return lab;
+}
+function Root() {
+  const [user, setUser] = useState<User | null | undefined>(undefined),
+    [allowSignup, setAllowSignup] = useState(true);
+  useEffect(() => {
+    api<{ user: User; allowSignup: boolean }>("/api/auth/me")
+      .then((r) => {
+        setUser(r.user);
+        setAllowSignup(r.allowSignup);
+      })
+      .catch((e) => {
+        setAllowSignup(e?.body?.allowSignup ?? true);
+        setUser(null);
+      });
   }, []);
-  const fresh = connected && now - lastMessage < 6000,
+  if (user === undefined) return <div className="boot" />;
+  if (!user) return <Auth allowSignup={allowSignup} onLogin={setUser} />;
+  return (
+    <Dashboard
+      user={user}
+      onLogout={async () => {
+        await api("/api/auth/logout", { method: "POST" }).catch(
+          () => undefined,
+        );
+        setUser(null);
+      }}
+    />
+  );
+}
+function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
+  const { state, connected, last } = useLiveState(true),
+    lab = useLab(true),
+    [tab, setTab] = useState<Tab>("trade"),
+    [selected, setSelected] = useState("BTCUSDT"),
+    [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, []);
+  const fresh = connected && now - last < 6000,
+    serverNow = state ? state.time + (now - last) : now,
     asset =
-      state?.assets.find((x) => x.symbol === selected) || state?.assets[0],
-    m = state?.metrics,
-    lab = state?.strategies,
-    grouped = m
-      ? (m as unknown as Record<string, Record<string, Metric>>)[group]
-      : {};
+      state?.assets.find((a) => a.symbol === selected) ?? state?.assets[0],
+    prices = useMemo(
+      () =>
+        Object.fromEntries(
+          (state?.assets || []).map((a) => [a.symbol, a.price]),
+        ),
+      [state],
+    );
+  const open = (symbol: string) => {
+    setSelected(symbol);
+    setTab("trade");
+  };
+  return (
+    <div className="shell">
+      <nav className="rail" aria-label="Principal">
+        <div className="logo-mark small" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            className={tab === t.id ? "on" : ""}
+            aria-current={tab === t.id ? "page" : undefined}
+            onClick={() => setTab(t.id)}
+          >
+            <t.icon size={20} />
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="page">
+        <header className="top">
+          <div className="brand">
+            <strong>Yosh Scanner</strong>
+            <span className={fresh ? "live" : "offline"}>
+              {fresh ? "Ao vivo" : "Reconectando"}
+            </span>
+          </div>
+          <div className="who">
+            <span>{user.name}</span>
+            <button className="icon" onClick={onLogout} aria-label="Sair">
+              <LogOut size={18} />
+            </button>
+          </div>
+        </header>
+        {!fresh && state && (
+          <div className="notice bad" role="alert">
+            <WifiOff size={16} /> Conexão perdida. Os dados na tela podem estar
+            velhos; não entre em operação até voltar.
+          </div>
+        )}
+        <main className="content">
+          {tab === "trade" && (
+            <TradeView
+              state={state}
+              lab={lab}
+              selected={asset?.symbol ?? selected}
+              onSelect={setSelected}
+              fresh={fresh}
+              now={serverNow}
+            />
+          )}
+          {tab === "lab" && <LabView lab={lab} onOpen={open} />}
+          {tab === "history" && <HistoryView state={state} />}
+          {tab === "news" && <NewsView state={state} />}
+          {tab === "stats" && <StatsView state={state} />}
+          {tab === "system" && (
+            <SystemView state={state} user={user} lab={lab} />
+          )}
+        </main>
+      </div>
+      <SignalDock
+        signals={state?.signals || []}
+        now={serverNow}
+        prices={prices}
+        lab={state?.strategies}
+        onOpen={open}
+      />
+    </div>
+  );
+}
+function TradeView({
+  state,
+  lab,
+  selected,
+  onSelect,
+  fresh,
+  now,
+}: {
+  state: State | null;
+  lab: Lab | null;
+  selected: string;
+  onSelect: (s: string) => void;
+  fresh: boolean;
+  now: number;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const asset = state?.assets.find((a) => a.symbol === selected);
+  const strategies = (lab?.evaluations || [])
+    .filter((e) => e.symbol === selected)
+    .sort((a, b) => (b.outOfSample.winRate ?? 0) - (a.outOfSample.winRate ?? 0))
+    .slice(0, 6);
+  const news = (state?.news || [])
+    .filter((n) =>
+      n.classification?.assets.some((x) => ticker(selected).startsWith(x)),
+    )
+    .slice(0, 3);
+  if (!state)
+    return (
+      <div className="hero-empty">
+        <Suspense fallback={null}>
+          <Scene3D intensity={0.6} />
+        </Suspense>
+        <p>Conectando ao mercado…</p>
+      </div>
+    );
+  return (
+    <>
+      <div className="assets" role="tablist" aria-label="Ativos">
+        {state.assets.map((a) => (
+          <button
+            key={a.symbol}
+            role="tab"
+            aria-selected={a.symbol === selected}
+            className={a.symbol === selected ? "asset on" : "asset"}
+            onClick={() => onSelect(a.symbol)}
+          >
+            <b>{ticker(a.symbol)}</b>
+            <span>{price(a.price)}</span>
+            <small className={(a.change ?? 0) >= 0 ? "up" : "down"}>
+              {a.change == null
+                ? "—"
+                : `${a.change >= 0 ? "+" : ""}${pct(a.change, 2)}`}
+            </small>
+          </button>
+        ))}
+      </div>
+      {asset && (
+        <div className="trade-grid">
+          <section className="chart-panel">
+            <Suspense fallback={null}>
+              <div className="chart-backdrop">
+                <Scene3D intensity={0.35} />
+              </div>
+            </Suspense>
+            <div className="chart-head">
+              <div>
+                <h1>{pair(asset.symbol)}</h1>
+                <span className="muted">
+                  {COIN_NAMES[asset.symbol] || asset.symbol} · candles de 1
+                  minuto
+                </span>
+              </div>
+              <div className="quote">
+                <strong>{price(asset.price)}</strong>
+                <span className={(asset.change ?? 0) >= 0 ? "up" : "down"}>
+                  {asset.change == null
+                    ? "—"
+                    : `${asset.change >= 0 ? "+" : ""}${pct(asset.change, 2)} na última hora`}
+                </span>
+              </div>
+            </div>
+            <CandleChart
+              symbol={asset.symbol}
+              live={asset.price}
+              showAll={showAll}
+            />
+            <div className="chart-foot">
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={showAll}
+                  onChange={(e) => setShowAll(e.target.checked)}
+                />
+                <span>Mostrar gatilhos de estratégias não aprovadas</span>
+              </label>
+              <span className="legend">
+                <i className="dot buy" /> compra <i className="dot sell" />{" "}
+                venda <i className="dot gray" /> não aprovada
+              </span>
+            </div>
+            {asset.reasons.length > 0 && (
+              <p className="notice">{sentence(asset.reasons.join("; "))}</p>
+            )}
+          </section>
+          <aside className="side">
+            <section className="panel">
+              <h2>Expirações</h2>
+              <div className="expiries">
+                {asset.forecasts.map((f) => {
+                  const active =
+                    fresh &&
+                    f.signal &&
+                    f.signal.status === "PENDING" &&
+                    f.signal.expires > now;
+                  const run = state.signals.find(
+                    (x) =>
+                      x.symbol === asset.symbol &&
+                      x.horizon === f.horizon &&
+                      x.status === "FILLED",
+                  );
+                  const label = !fresh
+                    ? "Sem dados"
+                    : run
+                      ? `${run.direction === "COMPRA" ? "Compra" : "Venda"} em andamento`
+                      : active
+                        ? f.state === "COMPRA"
+                          ? "Compra"
+                          : "Venda"
+                        : "Sem entrada";
+                  return (
+                    <div
+                      key={f.horizon}
+                      className={`expiry ${active ? (f.state === "COMPRA" ? "buy" : "sell") : ""}`}
+                    >
+                      <span className="mins">
+                        {f.horizon}
+                        <small>min</small>
+                      </span>
+                      <div>
+                        <strong>
+                          {active &&
+                            (f.state === "COMPRA" ? (
+                              <ArrowUpRight size={16} />
+                            ) : (
+                              <ArrowDownRight size={16} />
+                            ))}
+                          {label}
+                        </strong>
+                        <p>
+                          {run
+                            ? `Termina em ${countdown((run.due ?? now) - now)}`
+                            : active
+                              ? `Acerto medido ${pct(f.probability)}`
+                              : sentence(f.reason)}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+            <section className="panel">
+              <h2>Estratégias deste ativo</h2>
+              {strategies.length ? (
+                <ul className="strats">
+                  {strategies.map((e) => (
+                    <StrategyRow
+                      key={e.id + e.horizon}
+                      e={e}
+                      breakEven={lab!.breakEven}
+                    />
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted">
+                  {sentence(state.strategies?.status) ||
+                    "Carregando o teste das estratégias…"}
+                </p>
+              )}
+            </section>
+            {news.length > 0 && (
+              <section className="panel">
+                <h2>Notícias recentes</h2>
+                {news.map((n) => (
+                  <a
+                    key={n.id}
+                    className="news-mini"
+                    href={n.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <span className={`sent ${n.classification?.sentiment}`} />
+                    {n.title}
+                  </a>
+                ))}
+              </section>
+            )}
+          </aside>
+        </div>
+      )}
+    </>
+  );
+}
+function StrategyRow({ e, breakEven }: { e: Evaluation; breakEven: number }) {
+  const wr = e.outOfSample.winRate ?? 0;
+  return (
+    <li className={e.approved ? "ok" : ""}>
+      <div>
+        <strong>{e.label}</strong>
+        <span className="muted">
+          {e.horizon} min · {e.outOfSample.wins + e.outOfSample.losses}{" "}
+          operações no teste
+        </span>
+      </div>
+      <div className="meter" aria-label={`Acerto ${pct(wr)}`}>
+        <span
+          style={{
+            width: `${Math.min(100, Math.max(0, (wr - 0.35) / 0.35) * 100)}%`,
+          }}
+          className={wr > breakEven ? "up" : "down"}
+        />
+        <i style={{ left: `${((breakEven - 0.35) / 0.35) * 100}%` }} />
+      </div>
+      <b className={wr > breakEven ? "up" : "down"}>{pct(wr)}</b>
+    </li>
+  );
+}
+function LabView({
+  lab,
+  onOpen,
+}: {
+  lab: Lab | null;
+  onOpen: (s: string) => void;
+}) {
+  const [filter, setFilter] = useState("todos");
+  const rows = (lab?.evaluations || []).filter(
+    (e) => filter === "todos" || e.symbol === filter,
+  );
+  const symbols = [...new Set((lab?.evaluations || []).map((e) => e.symbol))];
+  return (
+    <>
+      <section className="lab-hero">
+        <div>
+          <h1>
+            {lab
+              ? `${lab.approved} de ${lab.tested} aprovadas`
+              : "Testando estratégias…"}
+          </h1>
+          <p>
+            Cada estratégia escolhe seus ajustes nos primeiros 60% do histórico
+            e é julgada uma única vez nos 40% finais, que ela nunca viu. Só vira
+            sinal com 100 ou mais operações no teste e acerto mínimo, com 95% de
+            confiança, acima de {pct(lab?.breakEven)} (o empate com payout de{" "}
+            {pct(lab?.payout, 0)}).
+          </p>
+        </div>
+        <dl>
+          <div>
+            <dt>Histórico</dt>
+            <dd>
+              {lab?.historyFrom
+                ? `${new Date(lab.historyFrom).toLocaleDateString("pt-BR")} a ${new Date(lab.historyTo!).toLocaleDateString("pt-BR")}`
+                : "—"}
+            </dd>
+          </div>
+          <div>
+            <dt>Fonte</dt>
+            <dd>
+              {lab?.sources
+                ? [...new Set(Object.values(lab.sources))].join(", ") || "—"
+                : "—"}
+            </dd>
+          </div>
+          <div>
+            <dt>Situação</dt>
+            <dd>{sentence(lab?.status) || "—"}</dd>
+          </div>
+        </dl>
+      </section>
+      <div className="filters">
+        <select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          aria-label="Ativo"
+        >
+          <option value="todos">Todos os ativos</option>
+          {symbols.map((s) => (
+            <option key={s} value={s}>
+              {pair(s)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="table-scroll panel">
+        <table>
+          <thead>
+            <tr>
+              <th>Ativo</th>
+              <th>Exp.</th>
+              <th>Estratégia</th>
+              <th>Operações</th>
+              <th>Acerto no teste</th>
+              <th>Mínimo (95%)</th>
+              <th>Resultado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((e) => (
+              <tr
+                key={e.symbol + e.horizon + e.id}
+                className={e.approved ? "ok" : ""}
+              >
+                <td>
+                  <button className="link" onClick={() => onOpen(e.symbol)}>
+                    {ticker(e.symbol)}
+                  </button>
+                </td>
+                <td>{e.horizon} min</td>
+                <td>{e.label}</td>
+                <td>{e.outOfSample.wins + e.outOfSample.losses}</td>
+                <td
+                  className={
+                    (e.outOfSample.winRate ?? 0) > lab!.breakEven
+                      ? "up"
+                      : "down"
+                  }
+                >
+                  {pct(e.outOfSample.winRate)}
+                </td>
+                <td>{pct(e.outOfSample.lower)}</td>
+                <td>{e.approved ? "Aprovada" : sentence(e.reason)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!rows.length && (
+          <p className="muted pad">
+            O servidor está baixando o histórico e testando. Leva alguns minutos
+            após iniciar.
+          </p>
+        )}
+      </div>
+    </>
+  );
+}
+function HistoryView({ state }: { state: State | null }) {
+  const signals = state?.signals || [];
   const download = () => {
-    if (!state) return;
     const url = URL.createObjectURL(
-      new Blob([JSON.stringify(state.signals, null, 2)], {
+      new Blob([JSON.stringify(signals, null, 2)], {
         type: "application/json",
       }),
     );
     const a = document.createElement("a");
     a.href = url;
-    a.download = "paper-signals.json";
+    a.download = "sinais.json";
     a.click();
     URL.revokeObjectURL(url);
   };
+  const label: Record<string, string> = {
+    PENDING: "Aguardando entrada",
+    FILLED: "Em andamento",
+    INVALIDATED: "Cancelado",
+    EXPIRED: "Expirou sem entrada",
+    NO_DATA: "Sem cotação no fim",
+  };
   return (
-    <div className="app">
-      <aside>
-        <a className="brand" href="#" aria-label="Yosh Market Intelligence">
-          <span className="brand-icon">
-            <Activity size={24} />
-          </span>
-          <span>
-            YOSH<span className="brand-sub">MARKET INTELLIGENCE</span>
-          </span>
-        </a>
-        <div className="nav-label">WORKSPACE</div>
-        <nav aria-label="Principal">
-          {[
-            { id: "scanner", label: "Scanner ao vivo", icon: Radio },
-            { id: "paper", label: "Paper trading", icon: Layers3 },
-            { id: "news", label: "News intelligence", icon: Newspaper },
-            { id: "lab", label: "Estratégias", icon: Target },
-            { id: "metrics", label: "Desempenho", icon: BarChart3 },
-            { id: "system", label: "Dados e modelos", icon: Database },
-          ].map((x) => (
-            <button
-              key={x.id}
-              aria-current={tab === x.id ? "page" : undefined}
-              className={tab === x.id ? "active" : ""}
-              onClick={() => setTab(x.id)}
-            >
-              <x.icon size={18} />
-              {x.label}
-              {tab === x.id && <ChevronRight size={15} />}
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <ShieldCheck size={22} />
-          <strong>Integridade primeiro</strong>
-          <p>Dados reais. Fontes identificadas. Nenhuma execução de ordens.</p>
-          <span className="tag">PAPER ONLY</span>
-        </div>
-      </aside>
-      <main>
-        <header>
-          <div className="breadcrumb">
-            Workspace <ChevronRight size={14} />{" "}
-            <span>
-              {tab === "scanner"
-                ? "Market scanner"
-                : tab === "paper"
-                  ? "Paper trading"
-                  : tab === "news"
-                    ? "News intelligence"
-                    : tab === "metrics"
-                      ? "Desempenho"
-                      : tab === "lab"
-                        ? "Laboratório de estratégias"
-                        : "Dados e modelos"}
-            </span>
-          </div>
-          <div className="header-status">
-            <span className={"status-dot " + (fresh ? "ok" : "bad")} />
-            {fresh ? "Painel conectado" : "Painel desconectado"}
-            <span className="clock">{time(now)}</span>
-          </div>
-        </header>
-        <div className="content">
-          <div className="page-title">
-            <div>
-              <div className="eyebrow">INTELLIGENCE TERMINAL / 01</div>
-              <h1>
-                {tab === "scanner"
-                  ? "Uma visão clara do mercado."
-                  : tab === "paper"
-                    ? "Registro de paper trading."
-                    : tab === "news"
-                      ? "Contexto além do gráfico."
-                      : tab === "metrics"
-                        ? "Evidência, antes de confiança."
-                        : tab === "lab"
-                          ? "Só opera o que venceu o teste."
-                          : "A origem de cada decisão."}
-              </h1>
-              <p>
-                {tab === "scanner"
-                  ? "Análise contínua de criptoativos em horizontes de 5, 10 e 15 minutos."
-                  : tab === "paper"
-                    ? "Previsão, execução observada e resultado registrados separadamente."
-                    : tab === "news"
-                      ? "Classificação de eventos e reação do mercado com horários auditáveis."
-                      : tab === "metrics"
-                        ? "Resultados medidos, sem metas artificiais de acerto."
-                        : tab === "lab"
-                          ? "Estratégias testadas em histórico real da Binance, com assertividade medida fora da amostra."
-                          : "Acompanhe fontes, saúde do feed e validação dos modelos."}
-              </p>
-            </div>
-            <span className="mode">
-              <ShieldCheck size={16} />
-              {state?.sniper ? "SNIPER · PAPER" : "PAPER TRADING"}
-            </span>
-          </div>
-          {!fresh && (
-            <div className="banner danger" role="alert">
-              <WifiOff size={18} />
-              <span>
-                <strong>ANÁLISE INDISPONÍVEL</strong> · A conexão com o painel
-                está interrompida. Informações anteriores não são sinais
-                válidos.
-              </span>
-            </div>
-          )}
-          <div className="overview">
-            <div>
-              <span>Ativos monitorados</span>
-              <strong>
-                {state ? state.assets.length : "—"}
-                <small> / USDT</small>
-              </strong>
-            </div>
-            <div>
-              <span>Sinais registrados</span>
-              <strong>
-                {number(m?.total)}
-                <small>dados persistidos</small>
-              </strong>
-            </div>
-            <div>
-              <span>Taxa de acerto paper</span>
-              <strong>
-                {percent(m?.winRate)}
-                <small>
-                  {m?.count ? `${m.count} resultados` : "Aguardando resultados"}
-                </small>
-              </strong>
-            </div>
-            <div>
-              <span>Estratégias aprovadas</span>
-              <strong>
-                {state?.strategies ? state.strategies.approved : "—"}
-                <small>
-                  {state?.strategies
-                    ? `de ${state.strategies.tested} testadas no histórico`
-                    : "aguardando backtest"}
-                </small>
-              </strong>
-            </div>
-          </div>
-          {tab === "scanner" && (
-            <>
-              <div className="section-head">
-                <h2>
-                  <Radio size={18} />
-                  Visão de mercado
-                </h2>
-                <span>Binance Spot · WebSocket</span>
-              </div>
-              <div className="asset-tabs">
-                {(state?.assets || []).map((a) => (
-                  <button
-                    key={a.symbol}
-                    aria-pressed={asset?.symbol === a.symbol}
-                    onClick={() => setSelected(a.symbol)}
-                    className={asset?.symbol === a.symbol ? "selected" : ""}
-                  >
-                    <span className={"coin " + a.symbol.slice(0, 3)}>
-                      {a.symbol.slice(0, 1)}
-                    </span>
-                    <span className="asset-name">
-                      {a.symbol.replace("USDT", "")}
-                      <small>/ USDT</small>
-                    </span>
-                    <span className="asset-price">
-                      {money(a.price)}
-                      <small className={(a.change || 0) >= 0 ? "up" : "down"}>
-                        {a.change == null
-                          ? "Sem histórico"
-                          : (a.change >= 0 ? "+" : "") + percent(a.change)}
-                      </small>
-                    </span>
-                  </button>
-                ))}
-              </div>
-              {asset ? (
-                <>
-                  <section className="market-panel">
-                    <div className="market-top">
-                      <div>
-                        <span className="eyebrow">
-                          {asset.symbol.replace("USDT", " / USDT")}
-                        </span>
-                        <div className="big-price">{money(asset.price)}</div>
-                        <span
-                          className={(asset.change || 0) >= 0 ? "up" : "down"}
-                        >
-                          {percent(asset.change)}{" "}
-                          <small className="muted">
-                            · últimos 60 candles 1m
-                          </small>
-                        </span>
-                      </div>
-                      <div className="market-facts">
-                        <div>
-                          <span>Feed de mercado</span>
-                          <strong
-                            className={
-                              asset.feed === "CONECTADO" && fresh
-                                ? "up"
-                                : "warn"
-                            }
-                          >
-                            {fresh ? asset.feed : "DESCONECTADO"}
-                          </strong>
-                        </div>
-                        <div>
-                          <span>ATR / preço</span>
-                          <strong>
-                            {percent(Number(asset.features?.atrPct) || null)}
-                          </strong>
-                        </div>
-                        <div>
-                          <span>Volume relativo</span>
-                          <strong>
-                            {asset.features
-                              ? number(Number(asset.features.relativeVolume)) +
-                                " ×"
-                              : "—"}
-                          </strong>
-                        </div>
-                        <div>
-                          <span>Spread</span>
-                          <strong>
-                            {asset.features
-                              ? number(Number(asset.features.spreadBps)) +
-                                " bps"
-                              : "—"}
-                          </strong>
-                        </div>
-                      </div>
-                    </div>
-                    <Spark points={asset.chart} />
-                    <div className="chart-footer">
-                      <span>
-                        Fechamentos observados · 1m é apenas insumo de análise
-                      </span>
-                      <span>
-                        Último trade{" "}
-                        {asset.eventTime ? time(asset.eventTime) : "—"}
-                      </span>
-                    </div>
-                  </section>
-                  {asset.reasons.length > 0 && (
-                    <div className="banner">
-                      <Clock3 size={18} />
-                      <span>{asset.reasons.join(" · ")}</span>
-                    </div>
-                  )}
-                  <div className="section-head">
-                    <h2>
-                      <Target size={18} />
-                      Horizontes de decisão
-                    </h2>
-                    <span>
-                      Estratégias validadas e modelos · validade de 30 segundos
-                    </span>
-                  </div>
-                  <div className="forecasts">
-                    {asset.forecasts.map((f) => {
-                      const valid =
-                          fresh &&
-                          (!f.signal ||
-                            (f.signal.status === "PENDING" &&
-                              f.signal.expires > state!.time)),
-                        label = !fresh
-                          ? "ANÁLISE INDISPONÍVEL"
-                          : !valid
-                            ? "SEM ENTRADA"
-                            : f.state;
-                      return (
-                        <article className="forecast" key={f.horizon}>
-                          <div className="forecast-head">
-                            <span>
-                              {f.horizon}
-                              <small> MIN</small>
-                            </span>
-                            <Clock3 size={18} />
-                          </div>
-                          <h3
-                            className={
-                              label === "COMPRA"
-                                ? "up"
-                                : label === "VENDA"
-                                  ? "down"
-                                  : "muted"
-                            }
-                          >
-                            {label === "COMPRA" ? (
-                              <ArrowUpRight />
-                            ) : label === "VENDA" ? (
-                              <ArrowDownRight />
-                            ) : (
-                              <span className="neutral-icon">—</span>
-                            )}
-                            {label}
-                          </h3>
-                          <div className="probability">
-                            <span>
-                              {f.reason.startsWith("ESTRATÉGIA")
-                                ? "Acerto medido no backtest"
-                                : "Probabilidade calibrada"}
-                            </span>
-                            <strong>
-                              {fresh && f.probability !== null
-                                ? percent(f.probability)
-                                : "—"}
-                            </strong>
-                          </div>
-                          <p className="reason">{f.reason}</p>
-                          {f.signal && (
-                            <div className="entry">
-                              <span>Faixa da última previsão</span>
-                              <strong>
-                                {money(f.signal.entryLow)} –{" "}
-                                {money(f.signal.entryHigh)}
-                              </strong>
-                              <small>
-                                {valid
-                                  ? `Validade: ${Math.max(0, Math.ceil((f.signal.expires - state!.time) / 1000))}s`
-                                  : `Status: ${f.signal.status}`}
-                              </small>
-                            </div>
-                          )}
-                          <div className="factor-list">
-                            <span>FATORES FAVORÁVEIS</span>
-                            {f.favorable.length ? (
-                              f.favorable.map((x) => (
-                                <p key={x}>
-                                  <Check size={14} />
-                                  {names[x] || x}
-                                </p>
-                              ))
-                            ) : (
-                              <p className="muted">
-                                Aguardando evidência validada
-                              </p>
-                            )}
-                            <span>FATORES CONTRÁRIOS</span>
-                            {f.contrary.length ? (
-                              f.contrary.map((x) => (
-                                <p key={x}>
-                                  <X size={14} />
-                                  {names[x] || x}
-                                </p>
-                              ))
-                            ) : (
-                              <p className="muted">
-                                {f.probability === null
-                                  ? "Análise ainda indisponível"
-                                  : "Nenhum grupo contrário nesta avaliação"}
-                              </p>
-                            )}
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                  <section className="evidence">
-                    <h2>Leitura dos componentes</h2>
-                    <div>
-                      {Object.entries(names).map(([key, label]) => (
-                        <div key={key}>
-                          <span>{label}</span>
-                          <strong
-                            className={
-                              asset.groups?.[key] === 1
-                                ? "up"
-                                : asset.groups?.[key] === -1
-                                  ? "down"
-                                  : "muted"
-                            }
-                          >
-                            {!fresh || !asset.groups
-                              ? "INDISPONÍVEL"
-                              : asset.groups[key] === 1
-                                ? "COMPRADOR"
-                                : asset.groups[key] === -1
-                                  ? "VENDEDOR"
-                                  : "NEUTRO"}
-                          </strong>
-                        </div>
-                      ))}
-                    </div>
-                    <p className="small muted">
-                      Componentes são evidências heurísticas, não
-                      probabilidades. Livro parcial limitado aos 20 melhores
-                      níveis.
-                    </p>
-                  </section>
-                </>
-              ) : (
-                <div className="empty">
-                  <Database />
-                  <h2>Aguardando o coletor</h2>
-                  <p>
-                    Os pares aparecem quando o backend estabelece a conexão.
-                    Nenhum preço de demonstração será exibido.
-                  </p>
-                </div>
-              )}
-            </>
-          )}
-          {tab === "paper" && (
-            <section className="panel">
-              <div className="section-head">
-                <h2>Livro de sinais</h2>
-                <button
-                  className="secondary"
-                  onClick={download}
-                  disabled={!state}
+    <section className="panel">
+      <div className="panel-head">
+        <h2>Sinais emitidos</h2>
+        <button className="ghost" onClick={download} disabled={!signals.length}>
+          <Download size={16} /> Exportar
+        </button>
+      </div>
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Hora</th>
+              <th>Ativo</th>
+              <th>Direção</th>
+              <th>Exp.</th>
+              <th>Entrada</th>
+              <th>Saída</th>
+              <th>Resultado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {signals.map((s) => (
+              <tr key={s.id}>
+                <td>{clock(s.t)}</td>
+                <td>{ticker(s.symbol)}</td>
+                <td className={s.direction === "COMPRA" ? "up" : "down"}>
+                  {s.direction === "COMPRA" ? "Compra" : "Venda"}
+                </td>
+                <td>{s.horizon} min</td>
+                <td>{price(s.entry)}</td>
+                <td>{price(s.exit)}</td>
+                <td
+                  className={
+                    s.result === "WIN"
+                      ? "up"
+                      : s.result === "LOSS"
+                        ? "down"
+                        : ""
+                  }
                 >
-                  <Download size={16} />
-                  Exportar JSON
-                </button>
-              </div>
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Horário</th>
-                      <th>Ativo</th>
-                      <th>Horizonte</th>
-                      <th>Direção</th>
-                      <th>Entrada paper</th>
-                      <th>Saída</th>
-                      <th>Retorno</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {state?.signals.map((s) => (
-                      <tr key={s.id}>
-                        <td title={s.id}>{time(s.t)}</td>
-                        <td>{s.symbol}</td>
-                        <td>{s.horizon} min</td>
-                        <td
-                          className={s.direction === "COMPRA" ? "up" : "down"}
-                        >
-                          {s.direction}
-                        </td>
-                        <td>{money(s.entry)}</td>
-                        <td>{money(s.exit)}</td>
-                        <td>{percent(s.return)}</td>
-                        <td>
-                          <span className="tag">{s.result || s.status}</span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {!state?.signals.length && (
-                <Empty
-                  title="Nenhum sinal registrado"
-                  text="O coletor registra observações enquanto aguarda modelos calibrados e confluência suficiente."
-                />
-              )}
-              <p className="muted small">
-                Compra entra no ask e sai no bid; venda entra no bid e sai no
-                ask. Neutralidade usa o threshold configurado. Dados ausentes
-                ficam como NO_DATA.
-              </p>
-            </section>
-          )}
-          {tab === "news" && (
-            <section className="panel">
-              <div className="section-head">
-                <h2>
-                  <Newspaper size={18} />
-                  Eventos monitorados
-                </h2>
-                <span className="tag">
-                  {state?.newsStatus || "AGUARDANDO BACKEND"}
-                </span>
-              </div>
-              <div className="banner">
-                <ShieldCheck size={18} />
-                Confiança da IA classifica o texto. Não é probabilidade de o
-                mercado subir ou cair.
-              </div>
-              {state?.news.length ? (
-                state.news.map((n) => (
-                  <article className="news-card" key={n.id}>
-                    <div className="eyebrow">
-                      {n.source} · {time(n.publishedAt)}
-                    </div>
-                    <a href={n.url} target="_blank" rel="noreferrer">
-                      <h3>
-                        {n.title}
-                        <ExternalLink size={15} />
-                      </h3>
-                    </a>
-                    <p>
-                      {n.classification?.summary ||
-                        "CLASSIFICAÇÃO INDISPONÍVEL"}
-                    </p>
-                    {n.classification && (
-                      <>
-                        <div className="news-tags">
-                          <span className="tag">
-                            {n.classification.assets.join(", ")}
-                          </span>
-                          <span className="tag">
-                            {n.classification.sentiment}
-                          </span>
-                          <span>
-                            Impacto estimado: {n.classification.impact_score}/10
-                          </span>
-                          <span>
-                            Confiança da classificação:{" "}
-                            {percent(n.classification.confidence)}
-                          </span>
-                        </div>
-                        <details>
-                          <summary>Fundamentação e reação observada</summary>
-                          <p>{n.classification.reasoning_summary}</p>
-                          {n.reactions.map((r) => (
-                            <p key={r.symbol + r.horizon}>
-                              {r.symbol} · {r.horizon} min ·{" "}
-                              {r.status === "MEASURED"
-                                ? percent(r.return)
-                                : "SEM DADOS"}
-                            </p>
-                          ))}
-                        </details>
-                      </>
-                    )}
-                  </article>
-                ))
-              ) : (
-                <Empty
-                  title="Fonte de notícias não configurada ou sem eventos"
-                  text="Configure o feed JSON e o provedor de IA em .env. O modo SNIPER permanece bloqueado sem cobertura de notícias."
-                />
-              )}
-            </section>
-          )}
-          {tab === "lab" && (
-            <>
-              <div className="overview">
-                <div>
-                  <span>Situação</span>
-                  <strong>
-                    <small>{lab?.status || "AGUARDANDO BACKEND"}</small>
-                  </strong>
-                </div>
-                <div>
-                  <span>
-                    Histórico testado
-                    {lab?.sources && Object.keys(lab.sources).length
-                      ? ` · ${[...new Set(Object.values(lab.sources))].join(", ")}`
-                      : ""}
-                  </span>
-                  <strong>
-                    <small>
-                      {lab?.historyFrom
-                        ? `${new Date(lab.historyFrom).toLocaleDateString("pt-BR")} – ${new Date(lab.historyTo!).toLocaleDateString("pt-BR")}`
-                        : "—"}
-                    </small>
-                  </strong>
-                </div>
-                <div>
-                  <span>Aprovadas / testadas</span>
-                  <strong>
-                    {lab ? `${lab.approved} / ${lab.tested}` : "—"}
-                  </strong>
-                </div>
-                <div>
-                  <span>Break-even (payout)</span>
-                  <strong>{percent(lab?.breakEven)}</strong>
-                </div>
-              </div>
-              <div className="banner">
-                Cada família de estratégia tem os parâmetros escolhidos nos
-                primeiros 60% do histórico e é julgada uma única vez nos 40%
-                finais, que ela nunca viu. Só é aprovada com pelo menos{" "}
-                {lab?.minTrades ?? 100} operações fora da amostra, limite
-                inferior de confiança de 95% acima do break-even e as duas
-                metades do teste acima do break-even. Resultado passado não
-                garante resultado futuro.
-              </div>
-              {lab?.error && <p className="down">{lab.error}</p>}
-              <section className="panel">
-                <div className="table-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Ativo</th>
-                        <th>Horizonte</th>
-                        <th>Estratégia</th>
-                        <th>Operações (teste)</th>
-                        <th>Acerto (teste)</th>
-                        <th>Mínimo com 95% de confiança</th>
-                        <th>Acerto (seleção)</th>
-                        <th>Veredito</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(lab?.evaluations || []).map((e) => (
-                        <tr key={`${e.symbol}:${e.horizon}:${e.id}`}>
-                          <td>{e.symbol.replace("USDT", "")}</td>
-                          <td>{e.horizon} min</td>
-                          <td>{e.label}</td>
-                          <td>{e.outOfSample.wins + e.outOfSample.losses}</td>
-                          <td
-                            className={
-                              (e.outOfSample.winRate ?? 0) > lab!.breakEven
-                                ? "up"
-                                : "down"
-                            }
-                          >
-                            {percent(e.outOfSample.winRate)}
-                          </td>
-                          <td>{percent(e.outOfSample.lower)}</td>
-                          <td>{percent(e.inSample.winRate)}</td>
-                          <td className={e.approved ? "up" : "muted"}>
-                            {e.reason}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {!lab?.evaluations.length && (
-                  <Empty
-                    title="Backtest em andamento"
-                    text="O servidor baixa o histórico real de 1 minuto da Binance e testa todas as estratégias. Isso leva poucos minutos após iniciar."
-                  />
-                )}
-              </section>
-            </>
-          )}
-          {tab === "metrics" && (
-            <>
-              <div className="overview">
-                <div>
-                  <span>Wins / Losses / Neutros</span>
-                  <strong>
-                    {m ? `${m.wins} / ${m.losses} / ${m.neutrals}` : "—"}
-                  </strong>
-                </div>
-                <div>
-                  <span>Maior sequência de perdas</span>
-                  <strong>{number(m?.maxLossStreak)}</strong>
-                </div>
-                <div>
-                  <span>Payout configurado</span>
-                  <strong>{percent(m?.payout)}</strong>
-                </div>
-                <div>
-                  <span>Break-even teórico</span>
-                  <strong>{percent(m?.breakEven)}</strong>
-                </div>
-              </div>
-              <div className="banner">
-                Break-even = 1 / (1 + payout). Neutros considerados
-                reembolsados, sem taxas. Isso não garante lucro futuro nem
-                reproduz a liquidação de uma corretora.
-              </div>
-              <section className="panel">
-                <div className="section-head">
-                  <h2>Desempenho segmentado</h2>
-                  <label>
-                    Agrupar por{" "}
-                    <select
-                      value={group}
-                      onChange={(e) => setGroup(e.target.value)}
-                    >
-                      <option value="byAsset">Ativo</option>
-                      <option value="byHorizon">Horizonte</option>
-                      <option value="byHour">Horário (São Paulo)</option>
-                      <option value="byStrategy">Modelo / estratégia</option>
-                      <option value="byNews">Notícias</option>
-                    </select>
-                  </label>
-                </div>
-                <div className="table-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Grupo</th>
-                        <th>Resultados</th>
-                        <th>Wins</th>
-                        <th>Losses</th>
-                        <th>Neutros</th>
-                        <th>Acerto</th>
-                        <th>Sequência de perdas</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(grouped || {}).map(([key, v]) => (
-                        <tr key={key}>
-                          <td>{key}</td>
-                          <td>{v.count}</td>
-                          <td>{v.wins}</td>
-                          <td>{v.losses}</td>
-                          <td>{v.neutrals}</td>
-                          <td>{percent(v.winRate)}</td>
-                          <td>{v.maxLossStreak}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {!m?.count && (
-                  <Empty
-                    title="Ainda não há resultados medidos"
-                    text="As estatísticas serão preenchidas após o vencimento de sinais reais em paper trading."
-                  />
-                )}
-              </section>
-              <section className="panel">
-                <h2>Calibração prospectiva das previsões</h2>
-                <p className="muted">
-                  Probabilidade prevista comparada ao rótulo de retorno
-                  observado. Não usa o resultado da execução paper.
-                </p>
-                <div className="table-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Faixa</th>
-                        <th>Amostras</th>
-                        <th>Probabilidade média</th>
-                        <th>Frequência observada</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {m?.calibration
-                        .filter((b) => b.count > 0)
-                        .map((b) => (
-                          <tr key={b.from}>
-                            <td>
-                              {percent(b.from)} – {percent(b.to)}
-                            </td>
-                            <td>{b.count}</td>
-                            <td>{percent(b.predicted)}</td>
-                            <td>{percent(b.observed)}</td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            </>
-          )}
-          {tab === "system" && (
-            <>
-              <section className="panel">
-                <h2>Saúde e proveniência</h2>
-                <div className="system-grid">
-                  <div>
-                    <span>Banco de dados</span>
-                    <strong>{state?.database || "AGUARDANDO BACKEND"}</strong>
-                  </div>
-                  <div>
-                    <span>Feed / mercado</span>
-                    <strong>Binance · spot público</strong>
-                  </div>
-                  <div>
-                    <span>News Intelligence</span>
-                    <strong>{state?.newsStatus || "AGUARDANDO BACKEND"}</strong>
-                  </div>
-                  <div>
-                    <span>Deduplicação semântica</span>
-                    <strong>
-                      {state?.newsCapabilities.semanticDedup ||
-                        "NÃO CONFIGURADA"}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Observações coletadas</span>
-                    <strong>
-                      {m
-                        ? m.observations.reduce((s, x) => s + x.count, 0)
-                        : "—"}
-                    </strong>
-                  </div>
-                </div>
-                <div className="banner">
-                  Não há operação automática. APIs externas usam configuração
-                  explícita. Sem modelo compatível, a decisão permanece
-                  indisponível.
-                </div>
-              </section>
-              <section className="panel">
-                <h2>Modelos carregados</h2>
-                {state?.models.length ? (
-                  state.models.map((model) => (
-                    <div className="model-row" key={model.id}>
-                      <strong>
-                        {model.symbol} · {model.horizon} min
-                      </strong>
-                      <span>
-                        {model.sampleCount} amostras · {model.testCount} teste
-                      </span>
-                      <span>
-                        Brier {number(model.metrics.brier)} · ECE{" "}
-                        {number(model.metrics.ece)}
-                      </span>
-                      <small>
-                        Teste até{" "}
-                        {new Date(model.testEnd).toLocaleString("pt-BR")}
-                      </small>
-                    </div>
-                  ))
-                ) : (
-                  <Empty
-                    title="DADOS INSUFICIENTES PARA CONFIANÇA CALIBRADA"
-                    text="Colete observações, exporte os dados, rode a validação temporal e revise os modelos antes de carregá-los."
-                  />
-                )}
-                {Object.entries(state?.modelErrors || {}).map(([k, v]) => (
-                  <p key={k} className="down">
-                    {k}: {v}
-                  </p>
-                ))}
-              </section>
-              <section className="panel">
-                <h2>Indicadores disponíveis</h2>
-                <div className="system-grid">
-                  {Object.entries(asset?.indicators || {}).map(([k, v]) => (
-                    <div key={k}>
-                      <span>{k}</span>
-                      <strong>{number(v)}</strong>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            </>
-          )}
-          <footer>
-            <span>
-              <ShieldCheck size={14} />
-              Observação real. Decisão auditável.
-            </span>
-            <span>YOSH / RESEARCH SYSTEM · v1.0</span>
-          </footer>
-        </div>
-      </main>
-    </div>
+                  {s.result === "WIN"
+                    ? "Ganhou"
+                    : s.result === "LOSS"
+                      ? "Perdeu"
+                      : s.result === "NEUTRO"
+                        ? "Empate"
+                        : label[s.status] || s.status}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {!signals.length && (
+        <p className="muted pad">
+          Nenhum sinal ainda. Eles aparecem aqui quando uma estratégia aprovada
+          dispara.
+        </p>
+      )}
+    </section>
   );
 }
-function Empty({ title, text }: { title: string; text: string }) {
+function NewsView({ state }: { state: State | null }) {
+  const news: News[] = state?.news || [];
+  const sent: Record<string, string> = {
+    positive: "Positiva",
+    negative: "Negativa",
+    neutral: "Neutra",
+    mixed: "Mista",
+  };
   return (
-    <div className="empty">
-      <Activity size={28} />
-      <h3>{title}</h3>
-      <p>{text}</p>
-    </div>
+    <>
+      <p className="notice">
+        {sentence(state?.newsStatus) || "Carregando notícias…"}
+      </p>
+      <div className="news-grid">
+        {news.map((n) => (
+          <article key={n.id} className="news">
+            <span className="muted">
+              {n.source} · {clock(n.publishedAt)}
+            </span>
+            <a href={n.url} target="_blank" rel="noreferrer">
+              <h3>
+                {n.title} <ExternalLink size={14} />
+              </h3>
+            </a>
+            {n.classification && (
+              <div className="tags">
+                <span className={`sent-tag ${n.classification.sentiment}`}>
+                  {sent[n.classification.sentiment]}
+                </span>
+                {n.classification.assets.map((a) => (
+                  <span key={a}>{a === "MARKET" ? "Mercado" : a}</span>
+                ))}
+                <span>Impacto {n.classification.impact_score}/10</span>
+              </div>
+            )}
+          </article>
+        ))}
+      </div>
+      {!news.length && (
+        <p className="muted pad">
+          Nenhuma notícia recebida ainda. As fontes são consultadas a cada 30
+          segundos.
+        </p>
+      )}
+    </>
   );
 }
-createRoot(document.getElementById("root")!).render(<App />);
+function StatsView({ state }: { state: State | null }) {
+  const m = state?.metrics,
+    [group, setGroup] = useState<
+      "byAsset" | "byHorizon" | "byHour" | "byStrategy"
+    >("byAsset");
+  const groups = (m?.[group] || {}) as Record<string, Metric>;
+  return (
+    <>
+      <section className="stats">
+        <div>
+          <span>Acerto real</span>
+          <strong>{pct(m?.winRate)}</strong>
+          <small>precisa passar de {pct(m?.breakEven)}</small>
+        </div>
+        <div>
+          <span>Ganhos / perdas</span>
+          <strong>{m ? `${m.wins} / ${m.losses}` : "—"}</strong>
+          <small>{m?.neutrals ?? 0} empates</small>
+        </div>
+        <div>
+          <span>Saldo em unidades</span>
+          <strong className={(m?.paperUnits ?? 0) >= 0 ? "up" : "down"}>
+            {m ? m.paperUnits.toFixed(2).replace(".", ",") : "—"}
+          </strong>
+          <small>1 unidade por entrada</small>
+        </div>
+        <div>
+          <span>Pior sequência</span>
+          <strong>{m?.maxLossStreak ?? "—"}</strong>
+          <small>perdas seguidas</small>
+        </div>
+      </section>
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Resultado por grupo</h2>
+          <select
+            value={group}
+            onChange={(e) => setGroup(e.target.value as typeof group)}
+            aria-label="Agrupar"
+          >
+            <option value="byAsset">Ativo</option>
+            <option value="byHorizon">Expiração</option>
+            <option value="byHour">Hora</option>
+            <option value="byStrategy">Estratégia</option>
+          </select>
+        </div>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Grupo</th>
+                <th>Entradas</th>
+                <th>Ganhos</th>
+                <th>Perdas</th>
+                <th>Acerto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(groups).map(([k, v]) => (
+                <tr key={k}>
+                  <td>{k.replace("estrategia:", "")}</td>
+                  <td>{v.count}</td>
+                  <td>{v.wins}</td>
+                  <td>{v.losses}</td>
+                  <td>{pct(v.winRate)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!m?.count && (
+          <p className="muted pad">
+            Os resultados aparecem depois que os primeiros sinais vencerem.
+          </p>
+        )}
+      </section>
+    </>
+  );
+}
+function SystemView({
+  state,
+  user,
+  lab,
+}: {
+  state: State | null;
+  user: User;
+  lab: Lab | null;
+}) {
+  return (
+    <section className="panel">
+      <h2>Sistema</h2>
+      <dl className="kv">
+        <div>
+          <dt>Conta</dt>
+          <dd>
+            {user.name} ({user.email})
+            {user.role === "admin" ? " · administrador" : ""}
+          </dd>
+        </div>
+        <div>
+          <dt>Banco de dados</dt>
+          <dd>{state?.database || "—"}</dd>
+        </div>
+        <div>
+          <dt>Mercado</dt>
+          <dd>Binance spot ao vivo; EUR/USD vem do par EUR/USDT</dd>
+        </div>
+        <div>
+          <dt>Notícias</dt>
+          <dd>{sentence(state?.newsStatus) || "—"}</dd>
+        </div>
+        <div>
+          <dt>Estratégias</dt>
+          <dd>{sentence(lab?.status) || "—"}</dd>
+        </div>
+        <div>
+          <dt>Modo</dt>
+          <dd>Paper: o sistema avisa, nenhuma ordem é enviada</dd>
+        </div>
+      </dl>
+      {user.role === "admin" && (
+        <a className="ghost" href="/api/backup">
+          <Download size={16} /> Baixar backup do banco
+        </a>
+      )}
+    </section>
+  );
+}
+createRoot(document.getElementById("root")!).render(<Root />);

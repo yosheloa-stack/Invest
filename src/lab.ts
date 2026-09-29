@@ -238,6 +238,51 @@ export class StrategyLab {
       direction: fired[0].d === 1 ? "COMPRA" : "VENDA",
     };
   }
+  // Where the best-ranked strategies of this asset fired over the recent candles (chart markers).
+  triggers(symbol: string, closed: Candle[], window = 240, top = 2) {
+    const ranked = this.evaluations
+      .filter((x) => x.symbol === symbol && x.horizon === 5)
+      .slice(0, top);
+    if (!ranked.length || closed.length < 400) return [];
+    const s = buildSeries(closed.slice(-1500)),
+      out: {
+        t: number;
+        direction: "COMPRA" | "VENDA";
+        label: string;
+        approved: boolean;
+        winRate: number | null;
+      }[] = [];
+    for (const e of ranked) {
+      const spec = this.specs.get(e.id);
+      if (!spec) continue;
+      for (let i = Math.max(1, s.c.length - window); i < s.c.length; i++) {
+        const d = spec.signal(s, i);
+        if (d)
+          out.push({
+            t: s.t[i],
+            direction: d === 1 ? "COMPRA" : "VENDA",
+            label: e.label,
+            approved: e.approved,
+            winRate: e.outOfSample.winRate,
+          });
+      }
+    }
+    return out;
+  }
+  brief() {
+    const { evaluations, ...rest } = this.summary();
+    return {
+      ...rest,
+      approvedList: evaluations
+        .filter((x) => x.approved)
+        .map((x) => ({
+          symbol: x.symbol,
+          horizon: x.horizon,
+          label: x.label,
+          winRate: x.outOfSample.winRate,
+        })),
+    };
+  }
   summary() {
     return {
       status: this.status,

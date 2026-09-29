@@ -3,7 +3,8 @@ import express from "express";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { dashboardAuth } from "./auth.js";
+import { mountAuth } from "./web-auth.js";
+import { Accounts } from "./accounts.js";
 import { createServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { config } from "./config.js";
@@ -25,14 +26,22 @@ app.use((_req, res, next) => {
     res.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self' ws: wss:; style-src 'self'; img-src 'self' data:; script-src 'self'; frame-ancestors 'none'");
     next();
 });
-const auth = dashboardAuth(config.DASHBOARD_USER, config.DASHBOARD_PASSWORD, config.PUBLIC_ORIGIN);
+let accounts = null;
+app.set("trust proxy", 1);
 app.get("/healthz", (_req, res) => res.json({ status: "alive" }));
-app.use(auth.middleware);
+const auth = mountAuth(app, () => accounts, {
+    publicOrigin: config.PUBLIC_ORIGIN,
+    allowSignup: config.ALLOW_SIGNUP,
+});
+// The page and its assets are public; every data endpoint requires a logged-in account.
+app.use(express.static("public", { index: false }));
+app.get(["/", "/login"], (_req, res) => res.sendFile("index.html", { root: "public" }));
+app.use("/api", auth.requireUser);
 const server = createServer(app), wss = new WebSocketServer({
     server,
     path: "/ws",
     maxPayload: 1024,
-    verifyClient: ({ req }) => auth.authorized(req) && auth.originAllowed(req),
+    verifyClient: ({ req }) => auth.wsAuthorized(req),
 });
 let initialized = false, busy = false, stopping = false, lastBucket = -1, stats = null, newsList = [], newsCategories = [], recent = [], dbError = null;
 const features = new Map(), decisions = new Map(), active = new Map(), cooldowns = new Map(), strategyCandle = new Map();
@@ -73,11 +82,11 @@ function view() {
         newsLastSuccess: news.lastSuccess,
         models: models.summary(),
         modelErrors: models.errors,
-        strategies: lab.summary(),
+        strategies: lab.brief(),
         metrics: stats,
         news: newsList,
         newsCategories,
-        signals: recent,
+        signals: recent.slice(0, 100).map(({ features, ...x }) => x),
         assets: [...market.states.values()].map((s) => {
             const reasons = market.reasons(s);
             if (!store.healthy)
@@ -92,7 +101,7 @@ function view() {
                 reasons,
                 eventTime: s.trade?.t ?? null,
                 quote: s.quote ?? null,
-                chart: cs.slice(-60).map((c) => ({ t: c.end, p: c.c })),
+                chart: cs.slice(-30).map((c) => ({ t: c.end, p: c.c })),
                 indicators: f?.indicators ?? null,
                 features: f?.details ?? null,
                 groups: f?.groups ?? null,
@@ -149,11 +158,9 @@ app.get("/api/health", (_req, res) => {
     });
 });
 let backupBusy = false;
-app.get("/api/backup", async (_req, res) => {
+app.get("/api/backup", auth.requireAdmin, async (_req, res) => {
     if (backupBusy || !initialized || !store.healthy) {
-        res
-            .status(503)
-            .json({
+        res.status(503).json({
             error: "Backup indisponível; aguarde inicialização ou backup em andamento",
         });
         return;
@@ -195,8 +202,22 @@ app.get("/api/news", (_req, res) => res.json({
 }));
 app.get("/api/strategies", (_req, res) => res.json(lab.summary()));
 app.get("/api/models", (_req, res) => res.json({ models: models.summary(), errors: models.errors }));
-app.use(express.static("public"));
-app.get("/", (_req, res) => res.sendFile("index.html", { root: "public" }));
+app.get("/api/candles/:symbol", (req, res) => {
+    const s = market.states.get(String(req.params.symbol).toUpperCase());
+    if (!s)
+        return void res.status(404).json({ error: "Ativo não monitorado" });
+    const cs = s.candles["1m"], from = cs[Math.max(0, cs.length - 240)]?.t ?? 0, now = market.rest.now();
+    res.json({
+        symbol: s.symbol,
+        candles: cs
+            .slice(-240)
+            .map((c) => ({ t: c.t, o: c.o, h: c.h, l: c.l, c: c.c, v: c.v })),
+        signals: recent
+            .filter((x) => x.symbol === s.symbol && x.t >= from)
+            .map(({ features, ...x }) => x),
+        triggers: lab.triggers(s.symbol, cs.filter((c) => c.end < now)),
+    });
+});
 wss.on("connection", (ws, req) => {
     ws.send(JSON.stringify(view()));
     ws.on("error", (e) => log.warn({ err: e }, "dashboard socket"));
@@ -213,6 +234,9 @@ function broadcast() {
 }
 async function initialize() {
     await store.init();
+    const acc = new Accounts(store.pool);
+    acc.seedAdmin(config.DASHBOARD_USER, config.DASHBOARD_PASSWORD);
+    accounts = acc;
     log.info({ engine: "node:sqlite" }, "SQLite inicializado");
     await models.load();
     await news.init();
@@ -283,6 +307,8 @@ async function tick() {
         await store.settleObservations(now);
         if (isNewBucket) {
             lastBucket = bucket;
+            if (bucket % 60 === 0)
+                await store.prune(now, config.RETENTION_DAYS);
             await models.load();
             for (const s of cycle) {
                 const fs = candidates.get(s.symbol);

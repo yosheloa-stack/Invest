@@ -82,7 +82,19 @@ Ao iniciar, o servidor baixa os últimos `STRATEGY_DAYS` (padrão 30) dias de ca
 
 Se nenhuma estratégia passar, o sistema não inventa sinais: o painel mostra o acerto medido de cada uma e por que foi reprovada.
 
+## Painel, contas e avisos
+
+- Login com conta própria: qualquer pessoa cria conta com nome, e-mail e senha (mínimo 8 caracteres) na tela inicial. `ALLOW_SIGNUP=false` desliga o cadastro. `DASHBOARD_USER`/`DASHBOARD_PASSWORD` continuam valendo como login do administrador (só ele baixa o backup). Senhas ficam com scrypt; sessões de 30 dias em cookie HttpOnly.
+- Aba **Operar**: candles reais de 1 minuto com as entradas, resultados e gatilhos das estratégias marcados no gráfico; expirações de 5, 10 e 15 min; estratégias do ativo com acerto medido.
+- Barra de aviso fixa embaixo: mostra **Compra/Venda, ativo, expiração e contagem regressiva** para entrar, depois o tempo até o vencimento e por fim se ganhou ou perdeu. "Ligar avisos" ativa som e notificação do navegador.
+- Ativos padrão: BTC, ETH, SOL, BNB, XRP, DOGE, ADA, AVAX, LTC, LINK e EUR/USD (via par EUR/USDT da Binance). Outros pares de forex precisam de uma fonte com chave de API.
+- Retenção: snapshots e observações com mais de `RETENTION_DAYS` (padrão 7) dias são apagados a cada hora para o disco não encher.
+
 ## Notícias e IA
+
+Sem `NEWS_URL`, o sistema lê de graça os feeds RSS de CoinDesk, Cointelegraph, Decrypt e The Block. Sem IA configurada, cada notícia recebe uma classificação simples por palavras-chave (ativo, sentimento e tipo), marcada com confiança baixa e não usada como sinal.
+
+
 
 Configure `NEWS_URL` com feed JSON no contrato de [docs/API.md](docs/API.md), além de `LLM_BASE_URL`, `LLM_API_KEY` e `LLM_MODEL`. A base deve aceitar `/chat/completions` e JSON object response format. Provedores incompatíveis precisam de adaptação explícita. Não há fonte gratuita inventada ou scraping oculto.
 

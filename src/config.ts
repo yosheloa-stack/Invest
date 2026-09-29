@@ -9,7 +9,16 @@ const schema = z.object({
   DASHBOARD_USER: z.string().default(""),
   DASHBOARD_PASSWORD: z.string().default(""),
   PUBLIC_ORIGIN: z.string().default(""),
-  SYMBOLS: z.string().default("BTCUSDT,ETHUSDT,SOLUSDT"),
+  SYMBOLS: z
+    .string()
+    .default(
+      "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,DOGEUSDT,ADAUSDT,AVAXUSDT,LTCUSDT,LINKUSDT,EURUSDT",
+    ),
+  ALLOW_SIGNUP: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((x) => x === "true"),
+  RETENTION_DAYS: z.coerce.number().min(1).default(7),
   BINANCE_REST: z.string().url().default("https://data-api.binance.vision"),
   BINANCE_WS: z
     .string()

@@ -27,24 +27,32 @@ export class SQLiteConnection {
             throw Error("Outro coletor já controla este arquivo SQLite");
         }
     }
-    exec(sql) { try {
-        this.db.exec(sql);
+    exec(sql) {
+        try {
+            this.db.exec(sql);
+        }
+        catch (e) {
+            this.onError();
+            throw e;
+        }
     }
-    catch (e) {
-        this.onError();
-        throw e;
-    } }
     query(sql, args = []) {
         try {
             const params = [];
             const text = sql.replace(/\$(\d+)/g, (_, index) => {
                 const v = args[Number(index) - 1];
-                params.push(v == null ? null : typeof v === "boolean" ? Number(v) : typeof v === "object" ? JSON.stringify(v) : v);
+                params.push(v == null
+                    ? null
+                    : typeof v === "boolean"
+                        ? Number(v)
+                        : typeof v === "object"
+                            ? JSON.stringify(v)
+                            : v);
                 return "?";
             });
             const statement = this.db.prepare(text);
             if (/^\s*(SELECT|WITH|PRAGMA)\b/i.test(text)) {
-                const rows = statement.all(...params).map(raw => {
+                const rows = statement.all(...params).map((raw) => {
                     const row = { ...raw };
                     for (const key of ["body", "features", "decision", "payload"])
                         if (typeof row[key] === "string")

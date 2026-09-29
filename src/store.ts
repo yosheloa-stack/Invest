@@ -16,15 +16,30 @@ export class Store {
   pool: SQLiteConnection;
   healthy = false;
   constructor(path = config.SQLITE_PATH) {
-    this.pool = new SQLiteConnection(path, () => { this.healthy = false; });
+    this.pool = new SQLiteConnection(path, () => {
+      this.healthy = false;
+    });
   }
   async init() {
     this.pool.acquireCollector();
-    const version = Number(this.pool.query("PRAGMA user_version").rows[0]?.user_version || 0);
-    if (version === 0 && this.pool.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").rowCount) throw Error("Arquivo SQLite existente com schema desconhecido; preserve-o e use outro SQLITE_PATH");
-    if (version > 1) throw Error("Schema SQLite mais novo que esta aplicação");
-    const migration = await readFile("migrations/001_initial.sql", "utf8");
-    this.pool.transaction(() => this.pool.exec(migration));
+    const version = Number(
+      this.pool.query("PRAGMA user_version").rows[0]?.user_version || 0,
+    );
+    if (
+      version === 0 &&
+      this.pool.query(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+      ).rowCount
+    )
+      throw Error(
+        "Arquivo SQLite existente com schema desconhecido; preserve-o e use outro SQLITE_PATH",
+      );
+    if (version > 2) throw Error("Schema SQLite mais novo que esta aplicação");
+    const migrations = [
+      await readFile("migrations/001_initial.sql", "utf8"),
+      await readFile("migrations/002_accounts.sql", "utf8"),
+    ];
+    this.pool.transaction(() => migrations.forEach((m) => this.pool.exec(m)));
     this.healthy = true;
   }
   async ping() {
@@ -93,12 +108,13 @@ export class Store {
     this.pool.transaction(() => {
       this.pool.query(
         "INSERT INTO signals(id,symbol,horizon,t,status,body) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,body=EXCLUDED.body",
-        [s.id,s.symbol,s.horizon,s.t,s.status,s],
+        [s.id, s.symbol, s.horizon, s.t, s.status, s],
       );
-      if (create) this.pool.query(
-        "INSERT INTO outbox(id,signal_id,channel,payload) VALUES($1,$2,'dashboard',$3) ON CONFLICT DO NOTHING",
-        [randomUUID(), s.id, s],
-      );
+      if (create)
+        this.pool.query(
+          "INSERT INTO outbox(id,signal_id,channel,payload) VALUES($1,$2,'dashboard',$3) ON CONFLICT DO NOTHING",
+          [randomUUID(), s.id, s],
+        );
     });
   }
   async activeSignals(): Promise<Signal[]> {
@@ -153,6 +169,15 @@ export class Store {
           volatility: x.volatility,
         }
       : null;
+  }
+  // Snapshots and observations grow by the second; keep only the recent window on disk.
+  async prune(now: number, days: number) {
+    const before = now - days * 86400000;
+    this.pool.query("DELETE FROM snapshots WHERE t<$1", [before]);
+    this.pool.query(
+      "DELETE FROM observations WHERE t<$1 AND status<>'PENDING'",
+      [before],
+    );
   }
   async exportRows() {
     return (
