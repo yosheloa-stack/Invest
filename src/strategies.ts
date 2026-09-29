@@ -345,8 +345,8 @@ export function tally(
     lower: wilson(wins, n, z),
   };
 }
-// Mirrors live paper constraints: one position per symbol/horizon, cooldown after each signal,
-// entry at the signal candle close, exit h minutes later, any favourable move wins (binary option).
+// OHLC research approximation: close-to-close return with a neutral threshold.
+// It does not model bid/ask fills or the live shared per-asset admission gate.
 export function backtest(
   s: Series,
   spec: StrategySpec,
@@ -356,6 +356,7 @@ export function backtest(
   cooldownBars: number,
   z: number,
   split?: number,
+  returnThreshold = 0,
 ) {
   const w = [0, 0],
     l = [0, 0],
@@ -368,8 +369,8 @@ export function backtest(
     if (!d) continue;
     const r = (s.c[i + h] / s.c[i] - 1) * d,
       k = split !== undefined && i >= split ? 1 : 0;
-    if (r > 0) w[k]++;
-    else if (r < 0) l[k]++;
+    if (r > returnThreshold) w[k]++;
+    else if (r < -returnThreshold) l[k]++;
     else e[k]++;
     next = i + Math.max(h, cooldownBars);
   }
@@ -387,6 +388,7 @@ export interface LabOptions {
   minTrades: number;
   z: number;
   inSampleShare: number;
+  returnThreshold?: number;
 }
 // For each family: pick parameters on the in-sample slice, then judge once on the out-of-sample slice.
 export function evaluateSymbol(
@@ -405,18 +407,38 @@ export function evaluateSymbol(
     for (const family of families) {
       let best: { spec: StrategySpec; is: Tally } | undefined;
       for (const spec of specs.filter((x) => x.family === family)) {
-        const is = backtest(s, spec, h, WARMUP, split, o.cooldownBars, o.z).all;
+        const is = backtest(
+          s,
+          spec,
+          h,
+          WARMUP,
+          split,
+          o.cooldownBars,
+          o.z,
+          undefined,
+          o.returnThreshold,
+        ).all;
         if (is.trades < Math.max(30, o.minTrades / 2)) continue;
         if (!best || (is.lower ?? 0) > (best.is.lower ?? 0))
           best = { spec, is };
       }
       if (!best) continue;
-      const r = backtest(s, best.spec, h, split, n, o.cooldownBars, o.z, mid),
+      const r = backtest(
+          s,
+          best.spec,
+          h,
+          split,
+          n,
+          o.cooldownBars,
+          o.z,
+          mid,
+          o.returnThreshold,
+        ),
         oos = r.all,
         wr = oos.winRate ?? 0;
       const reason =
-        oos.trades < o.minTrades
-          ? `POUCAS OPERAÇÕES FORA DA AMOSTRA (${oos.trades} < ${o.minTrades})`
+        oos.wins + oos.losses < o.minTrades
+          ? `POUCAS OPERAÇÕES FORA DA AMOSTRA (${oos.wins + oos.losses} < ${o.minTrades})`
           : (oos.lower ?? 0) <= o.breakEven
             ? wr > o.breakEven
               ? "ACIMA DO BREAK-EVEN, MAS SEM SIGNIFICÂNCIA ESTATÍSTICA"

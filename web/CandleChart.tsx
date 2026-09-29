@@ -130,6 +130,7 @@ export default function CandleChart({
     [hover, setHover] = useState(false),
     [left, setLeft] = useState("--:--"),
     [menu, setMenu] = useState(false),
+    [showTriggers, setShowTriggers] = useState(false),
     [studies, setStudies] = useState<Set<Study>>(() => new Set(["ema", "vol"])),
     [minute, setMinute] = useState(0);
   const p = useMemo(() => params(focus?.id), [focus?.id]);
@@ -465,29 +466,16 @@ export default function CandleChart({
     if (studies.has("vwap")) put(L.vwap, vwapAt(bars, bars.length - 1));
     if (!hover) setLegend(read(bars.length - 1));
   };
-  // The last candle glides to the new price instead of jumping.
+  // Market prices are displayed immediately, without interpolated prices.
   const glide = (b: Bar) => {
-    cancelAnimationFrame(anim.current);
-    const from = shown.current ?? b.c,
-      start = performance.now(),
-      dur = 220;
-    const step = (now: number) => {
-      const k = Math.min(1, (now - start) / dur),
-        e = 1 - Math.pow(1 - k, 3),
-        c = from + (b.c - from) * e;
-      shown.current = c;
-      candles.current?.update({
-        time: sec(b.t),
-        open: b.o,
-        high: Math.max(b.h, c),
-        low: Math.min(b.l, c),
-        close: c,
-      });
-      if (k < 1) anim.current = requestAnimationFrame(step);
-    };
-    if (matchMedia("(prefers-reduced-motion: reduce)").matches)
-      step(start + dur);
-    else anim.current = requestAnimationFrame(step);
+    candles.current?.update({
+      time: sec(b.t),
+      open: b.o,
+      high: b.h,
+      low: b.l,
+      close: b.c,
+    });
+    shown.current = b.c;
   };
   const fit = () => {
     const w = host.current?.clientWidth ?? 800,
@@ -501,21 +489,37 @@ export default function CandleChart({
     let stop = false,
       first = true;
     setData(null);
+    setError(null);
+    setLegend(null);
     hist.current = [];
     view.current = [];
     shown.current = null;
+    const controller = new AbortController();
+    let loading = false,
+      lastLoaded = 0;
     const load = async () => {
+      if (loading) return;
+      loading = true;
       try {
-        const d = await api<CandleData>(`/api/candles/${symbol}?limit=1000`);
+        const d = await api<CandleData>(`/api/candles/${symbol}?limit=1000`, {
+          signal: controller.signal,
+        });
         if (stop) return;
+        if (d.symbol !== symbol || d.candles.length < 2)
+          throw Error("Histórico em preparação. Tentando novamente…");
         const bars: Bar[] = d.candles.map((k) => ({ ...k, buy: k.buy ?? 0 }));
         const live = liveBar(symbol);
         if (live && bars.length && live.t >= bars[bars.length - 1].t) {
           if (live.t === bars[bars.length - 1].t) bars[bars.length - 1] = live;
           else bars.push(live);
         }
+        const range = !first
+          ? chart.current?.timeScale().getVisibleLogicalRange()
+          : null;
         hist.current = bars;
         paintAll();
+        if (range) chart.current?.timeScale().setVisibleLogicalRange(range);
+        lastLoaded = Date.now();
         setData(d);
         setError(null);
         if (first) {
@@ -527,15 +531,20 @@ export default function CandleChart({
           setError(
             e instanceof Error ? e.message : "Falha ao carregar candles",
           );
+      } finally {
+        loading = false;
       }
     };
     void load();
-    const timer = setInterval(load, 60000);
+    const timer = setInterval(() => {
+      if (first || Date.now() - lastLoaded >= 30000) void load();
+    }, 5000);
     return () => {
       stop = true;
+      controller.abort();
       clearInterval(timer);
     };
-  }, [symbol]);
+  }, [symbol, tf, p]);
   // Switching timeframe rebuilds the candles from the same 1-minute history.
   useEffect(() => {
     if (!hist.current.length) return;
@@ -583,7 +592,7 @@ export default function CandleChart({
       size = tf * 60000,
       bucket = (t: number) => sec(Math.floor(t / size) * size),
       spec = focus ? SPECS.get(focus.id) : undefined;
-    if (spec && bars.length > 300) {
+    if (showTriggers && spec && bars.length > 300) {
       const s = buildSeries(bars.slice(0, -1)),
         from = Math.max(300, s.c.length - 400 * tf);
       for (let i = from; i < s.c.length; i++) {
@@ -603,7 +612,11 @@ export default function CandleChart({
       }
     }
     const first = bars[0]?.t ?? 0;
-    for (const s of [...signals, ...(data?.signals || [])]) {
+    for (const s of new Map(
+      [...(data?.signals || []), ...signals].map((s) => [s.id, s]),
+    ).values()) {
+      if (s.symbol !== symbol || !["FILLED", "SETTLED"].includes(s.status))
+        continue;
       if ((s.entryAt ?? s.t) < first) continue;
       const buy = s.direction === "COMPRA";
       out.push({
@@ -637,7 +650,7 @@ export default function CandleChart({
     });
     unique.sort((a, b) => Number(a.time) - Number(b.time));
     markers.current.setMarkers(unique);
-  }, [data, focus, signals, minute, tf]);
+  }, [data, focus, signals, minute, tf, showTriggers]);
   const toggle = (s: Study) =>
     setStudies((x) => {
       const n = new Set(x);
@@ -701,6 +714,14 @@ export default function CandleChart({
             </div>
           )}
         </div>
+        <button
+          className={`tv-btn ${showTriggers ? "on" : ""}`}
+          aria-pressed={showTriggers}
+          title="Gatilhos históricos de pesquisa; não são entradas emitidas"
+          onClick={() => setShowTriggers(!showTriggers)}
+        >
+          Gatilhos
+        </button>
         <span className="tv-clock" title="Tempo até o candle atual fechar">
           {left}
         </span>
@@ -779,9 +800,15 @@ export default function CandleChart({
           </div>
         )}
         {!data && !error && (
-          <div className="chart-note">Carregando candles…</div>
+          <div className="chart-note" role="status" aria-live="polite">
+            Carregando {title}…
+          </div>
         )}
-        {error && <div className="chart-note">{error}</div>}
+        {error && (
+          <div className="chart-note" role="status">
+            {error}
+          </div>
+        )}
       </div>
     </div>
   );

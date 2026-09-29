@@ -75,8 +75,8 @@ O primeiro relatório mede somente previsões; não finge ser execução. O segu
 Ao iniciar, o servidor baixa os últimos `STRATEGY_DAYS` (padrão 30) dias de candles reais de 1 minuto para cada ativo (Binance; se falhar, Bybit; depois OKX) e testa 62 variações de 9 famílias de estratégias (RSI, Bollinger, impulso, sequência de candles, pullback na EMA21, distância da VWAP, fluxo agressor, candle de exaustão e RSI+Bollinger), cada uma nos sentidos seguir e reverter, para 5, 10 e 15 minutos.
 
 - Os parâmetros de cada família são escolhidos só nos primeiros 60% do histórico. A família é julgada uma única vez nos 40% finais, que ela nunca viu.
-- O backtest respeita as mesmas regras do paper: entrada no fechamento do candle, saída h minutos depois, uma posição por ativo/horizonte e cooldown. Acerto = movimento a favor (regra de opção binária).
-- Aprovação exige pelo menos `STRATEGY_MIN_TRADES` (padrão 100) operações fora da amostra, limite inferior de confiança (Wilson, `STRATEGY_Z` = 1,96) acima do break-even de 55,56% e as duas metades do teste acima do break-even. Em 30 passeios aleatórios de teste, nenhuma estratégia foi aprovada por acaso (720 testes).
+- O backtest é uma aproximação com entrada no fechamento do candle, saída h minutos depois e cooldown. Usa `RETURN_THRESHOLD` para separar acertos, perdas e neutros. O paper usa bid/ask e preenchimento posterior, por isso os resultados podem diferir.
+- Aprovação exige pelo menos `STRATEGY_MIN_TRADES` (padrão 100) resultados não neutros fora da amostra, limite inferior de confiança (Wilson, `STRATEGY_Z` = 1,96) acima do break-even de 55,56% e as duas metades do teste acima do break-even. Em 30 passeios aleatórios de teste, nenhuma estratégia foi aprovada por acaso (720 testes).
 - Só estratégias aprovadas emitem sinais paper, com o acerto medido fora da amostra no lugar da probabilidade. Sinais contraditórios se cancelam. A validação é refeita a cada `STRATEGY_REFRESH_HOURS` (padrão 6) com dados novos, então estratégias que perdem a vantagem são desligadas.
 - Painel: aba **Estratégias**. API: `/api/strategies`. Fora do servidor: `npm run lab -- research/strategy-report.json`.
 
@@ -142,3 +142,7 @@ Os testes usam SQLite real em arquivos temporários, incluindo persistência, bl
 - Planejado para um coletor e poucos pares. A arquitetura modular permite separar serviços; não há alegação de alta disponibilidade distribuída nesta versão.
 
 Veja [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/API.md](docs/API.md) e [docs/VALIDATION.md](docs/VALIDATION.md).
+
+## Correções de acompanhamento ao vivo
+
+Consulte [docs/LIVE-RELIABILITY.md](docs/LIVE-RELIABILITY.md) para o fluxo atualizado de gráficos, entrada única por ativo, avisos, resultados e limites de comparação entre backtest e paper. O laboratório agora exige amostras não neutras, aplica `RETURN_THRESHOLD` e só autoriza sinais a partir de validação recente da mesma exchange do feed ao vivo.

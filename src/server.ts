@@ -3,6 +3,8 @@ import express from "express";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { signalBlocked } from "./signal-gate.js";
+import { liveCandle } from "./live-candle.js";
 import { mountAuth } from "./web-auth.js";
 import { Accounts } from "./accounts.js";
 import { createServer } from "node:http";
@@ -83,12 +85,16 @@ function labReason(symbol: string, h: number) {
     ? `AGUARDANDO GATILHO: ${ok.map((x) => x.label).join(" | ")}`
     : "NENHUMA ESTRATÉGIA APROVADA NO BACKTEST PARA ESTE ATIVO/HORIZONTE";
 }
-function blocked(symbol: string, h: number, now: number) {
-  return (
-    now - (cooldowns.get(`${symbol}:${h}`) || 0) < config.COOLDOWN_MS ||
-    [...active.values()].some((x) => x.symbol === symbol && x.horizon === h)
+function blocked(symbol: string, now: number) {
+  return signalBlocked(
+    symbol,
+    now,
+    config.COOLDOWN_MS,
+    cooldowns,
+    active.values(),
   );
 }
+
 let candleQueue = Promise.resolve();
 market.on("candles", (symbol: string, tf: TF, cs: Candle[]) => {
   candleQueue = candleQueue
@@ -281,24 +287,10 @@ function liveTicks() {
   if (!wss.clients.size) return;
   const k: Record<string, number[]> = {};
   for (const s of market.states.values()) {
-    if (!s.trade) continue;
-    const start = Math.floor(s.trade.t / 60000) * 60000,
-      cs = s.candles["1m"],
-      prev = cs[cs.length - 1],
-      trades = s.trades.filter((x) => x.t >= start);
-    if (!trades.length) continue;
-    let h = -Infinity,
-      l = Infinity,
-      v = 0,
-      buy = 0;
-    for (const x of trades) {
-      h = Math.max(h, x.p);
-      l = Math.min(l, x.p);
-      v += x.q;
-      if (x.buy) buy += x.q;
-    }
-    const o = prev && prev.t === start ? prev.o : trades[0].p;
-    k[s.symbol] = [start, o, Math.max(h, o), Math.min(l, o), s.trade.p, v, buy];
+    if (!s.trade || market.rest.now() - s.trade.received > config.STALE_MS)
+      continue;
+    const b = liveCandle(s);
+    if (b) k[s.symbol] = [b.t, b.o, b.h, b.l, b.c, b.v, b.buy];
   }
   const body = JSON.stringify(k);
   if (body === lastTicks) return;
@@ -347,6 +339,7 @@ async function tick() {
   busy = true;
   try {
     const now = market.rest.now();
+    let signalsChanged = false;
     // Freeze point-in-time inputs before any await; sockets may mutate live state during I/O.
     const cycle = [...market.states.values()].map(freezeMarketState);
     const bucket = Math.floor(now / 60000),
@@ -401,6 +394,7 @@ async function tick() {
         );
       if (JSON.stringify(sig) !== JSON.stringify(next)) {
         await store.saveSignal(next);
+        signalsChanged = true;
         active.set(id, next);
         recent = [next, ...recent.filter((x) => x.id !== id)].slice(0, 500);
       }
@@ -435,12 +429,7 @@ async function tick() {
                 reason: "FEED ALTERADO DURANTE A ANÁLISE",
                 signal: undefined,
               };
-            } else if (
-              now - (cooldowns.get(key) || 0) < config.COOLDOWN_MS ||
-              [...active.values()].some(
-                (x) => x.symbol === s.symbol && x.horizon === h,
-              )
-            ) {
+            } else if (blocked(s.symbol, now)) {
               d = {
                 ...d,
                 state: "SEM ENTRADA",
@@ -449,6 +438,7 @@ async function tick() {
               };
             } else {
               await store.saveSignal(d.signal, true);
+              signalsChanged = true;
               active.set(d.signal.id, d.signal);
               recent = [d.signal, ...recent].slice(0, 500);
               cooldowns.set(key, now);
@@ -481,21 +471,32 @@ async function tick() {
         continue;
       strategyCandle.set(s.symbol, cl.t);
       for (const h of HORIZONS) {
-        const f = features.get(`${s.symbol}:${h}`),
-          pick = lab.decide(s.symbol, h, closed);
-        if (!f || !pick || blocked(s.symbol, h, now)) continue;
-        const d = strategyDecision(f, pick, s.trade!.p, now);
+        const pick = lab.decide(s.symbol, h, closed);
+        const decisionNow = market.rest.now();
+        if (!pick || blocked(s.symbol, decisionNow) || market.reasons(s).length)
+          continue;
+        const snapshot = freezeMarketState(s);
+        const f = buildFeatures(
+          snapshot,
+          h,
+          decisionNow,
+          news.context(s.symbol, decisionNow, h),
+          news.ready(),
+        );
+        const d = strategyDecision(f, pick, snapshot.trade!.p, decisionNow);
         if (!d.signal) continue;
         await store.saveSignal(d.signal, true);
+        signalsChanged = true;
         active.set(d.signal.id, d.signal);
         recent = [d.signal, ...recent].slice(0, 500);
-        cooldowns.set(`${s.symbol}:${h}`, now);
+        cooldowns.set(`${s.symbol}:${h}`, decisionNow);
         decisions.set(s.symbol, [
           ...(decisions.get(s.symbol) || []).filter((x) => x.horizon !== h),
           d,
         ]);
       }
     }
+    if (signalsChanged) stats = await store.stats();
     broadcast();
   } catch (e) {
     store.healthy = false;
@@ -523,7 +524,7 @@ async function newsTick() {
   }
 }
 const timer = setInterval(() => void tick(), 1000),
-  tickTimer = setInterval(liveTicks, 250),
+  tickTimer = setInterval(liveTicks, 100),
   newsTimer = setInterval(() => void newsTick(), 30000);
 server.listen(config.PORT, "0.0.0.0", () =>
   log.info({ port: config.PORT }, "dashboard iniciado"),

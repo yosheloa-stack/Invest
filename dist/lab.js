@@ -1,7 +1,8 @@
+import { Worker } from "node:worker_threads";
 import { config, symbols } from "./config.js";
 import { log } from "./log.js";
 import { HORIZONS } from "./types.js";
-import { buildSeries, catalog, evaluateSymbol, } from "./strategies.js";
+import { buildSeries, catalog, } from "./strategies.js";
 const yieldLoop = () => new Promise((r) => setImmediate(r));
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 async function getJson(url) {
@@ -75,6 +76,9 @@ export class StrategyLab {
     specs = new Map(catalog().map((x) => [x.id, x]));
     timer;
     running = false;
+    stopped = false;
+    worker;
+    retry;
     constructor(rest) {
         this.rest = rest;
     }
@@ -86,10 +90,13 @@ export class StrategyLab {
         this.timer = setInterval(() => void this.run(), config.STRATEGY_REFRESH_HOURS * 3600000);
     }
     stop() {
+        this.stopped = true;
         clearInterval(this.timer);
+        clearTimeout(this.retry);
+        void this.worker?.terminate();
     }
     sources = {};
-    // Tries Binance first, then Bybit and OKX; any liquid exchange tracks the same market price.
+    // Alternative exchanges remain available for research, never approval of Binance signals.
     async fetch(symbol) {
         const now = this.rest.now(), from = now - config.STRATEGY_DAYS * 86400000, errors = [];
         for (const [name, load] of [
@@ -112,6 +119,8 @@ export class StrategyLab {
                 ].sort((a, b) => a.t - b.t);
                 if (cs.length < config.STRATEGY_DAYS * 1440 * 0.8)
                     throw Error(`só ${cs.length} candles`);
+                if (cs.some((c, i) => i > 0 && c.t - cs[i - 1].t !== 60000))
+                    throw Error("Histórico com lacunas");
                 this.history.set(symbol, cs);
                 this.sources[symbol] = name;
                 return cs;
@@ -148,7 +157,7 @@ export class StrategyLab {
         return out;
     }
     async run() {
-        if (this.running)
+        if (this.running || this.stopped)
             return;
         this.running = true;
         try {
@@ -163,13 +172,47 @@ export class StrategyLab {
                 to = Math.max(to, cs[cs.length - 1].end);
                 this.status = `BACKTEST EM ANDAMENTO (${symbol})`;
                 await yieldLoop();
-                all.push(...evaluateSymbol(symbol, buildSeries(cs), HORIZONS, {
+                const options = {
                     breakEven: this.breakEven,
                     cooldownBars: Math.ceil(config.COOLDOWN_MS / 60000),
                     minTrades: config.STRATEGY_MIN_TRADES,
                     z: config.STRATEGY_Z,
                     inSampleShare: 0.6,
-                }));
+                    returnThreshold: config.RETURN_THRESHOLD,
+                };
+                if (this.stopped)
+                    return;
+                const evaluations = await new Promise((resolve, reject) => {
+                    // Source mode and the committed production build each use their own worker.
+                    const worker = (this.worker = new Worker(new URL(import.meta.url.endsWith(".ts")
+                        ? "./lab-worker.ts"
+                        : "./lab-worker.js", import.meta.url), {
+                        workerData: {
+                            symbol,
+                            candles: cs,
+                            horizons: HORIZONS,
+                            options,
+                        },
+                    }));
+                    let answered = false;
+                    worker.once("message", (result) => {
+                        answered = true;
+                        resolve(result);
+                    });
+                    worker.once("error", reject);
+                    worker.once("exit", (code) => {
+                        if (!answered)
+                            reject(Error(`Backtest interrompido (${code})`));
+                    });
+                });
+                this.worker = undefined;
+                all.push(...evaluations.map((e) => this.sources[symbol] === "Binance"
+                    ? e
+                    : {
+                        ...e,
+                        approved: false,
+                        reason: "FONTE DIFERENTE DO FEED AO VIVO — SOMENTE PESQUISA",
+                    }));
             }
             this.evaluations = all;
             this.historyFrom = from;
@@ -186,13 +229,27 @@ export class StrategyLab {
             this.error = e instanceof Error ? e.message : String(e);
             this.status = "FALHA NO LABORATÓRIO — NOVA TENTATIVA EM 5 MIN";
             log.error({ err: e }, "strategy lab");
-            setTimeout(() => void this.run(), 300000).unref();
+            if (!this.stopped)
+                this.retry = setTimeout(() => void this.run(), 300000);
+            this.retry?.unref();
         }
         finally {
             this.running = false;
         }
     }
+    unavailable(symbol) {
+        if (this.error)
+            return "VALIDAÇÃO INDISPONÍVEL — AGUARDANDO NOVO TESTE";
+        if (this.sources[symbol] !== "Binance")
+            return "FONTE DIFERENTE DO FEED AO VIVO — SOMENTE PESQUISA";
+        if (!this.updatedAt ||
+            Date.now() - this.updatedAt > config.STRATEGY_REFRESH_HOURS * 3600000)
+            return "VALIDAÇÃO VENCIDA — AGUARDANDO NOVO TESTE";
+        return null;
+    }
     approved(symbol, h) {
+        if (this.unavailable(symbol))
+            return [];
         return this.evaluations.filter((x) => x.approved && x.symbol === symbol && x.horizon === h);
     }
     // Evaluates approved strategies on the last closed candle; conflicting triggers cancel each other.
@@ -252,6 +309,10 @@ export class StrategyLab {
         };
     }
     summary() {
+        const evaluations = this.evaluations.map((e) => {
+            const reason = this.unavailable(e.symbol);
+            return reason && e.approved ? { ...e, approved: false, reason } : e;
+        });
         return {
             status: this.status,
             error: this.error,
@@ -264,8 +325,8 @@ export class StrategyLab {
             z: config.STRATEGY_Z,
             sources: this.sources,
             tested: this.evaluations.length,
-            approved: this.evaluations.filter((x) => x.approved).length,
-            evaluations: this.evaluations,
+            approved: evaluations.filter((x) => x.approved).length,
+            evaluations,
         };
     }
 }
