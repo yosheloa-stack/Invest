@@ -72,7 +72,7 @@ O primeiro relatório mede somente previsões; não finge ser execução. O segu
 
 ## Laboratório de estratégias (funciona sem modelo treinado)
 
-Ao iniciar, o servidor baixa os últimos `STRATEGY_DAYS` (padrão 30) dias de candles reais de 1 minuto da Binance para cada ativo e testa 62 variações de 9 famílias de estratégias (RSI, Bollinger, impulso, sequência de candles, pullback na EMA21, distância da VWAP, fluxo agressor, candle de exaustão e RSI+Bollinger), cada uma nos sentidos seguir e reverter, para 5, 10 e 15 minutos.
+Ao iniciar, o servidor baixa os últimos `STRATEGY_DAYS` (padrão 30) dias de candles reais de 1 minuto para cada ativo (Binance; se falhar, Bybit; depois OKX) e testa 62 variações de 9 famílias de estratégias (RSI, Bollinger, impulso, sequência de candles, pullback na EMA21, distância da VWAP, fluxo agressor, candle de exaustão e RSI+Bollinger), cada uma nos sentidos seguir e reverter, para 5, 10 e 15 minutos.
 
 - Os parâmetros de cada família são escolhidos só nos primeiros 60% do histórico. A família é julgada uma única vez nos 40% finais, que ela nunca viu.
 - O backtest respeita as mesmas regras do paper: entrada no fechamento do candle, saída h minutos depois, uma posição por ativo/horizonte e cooldown. Acerto = movimento a favor (regra de opção binária).

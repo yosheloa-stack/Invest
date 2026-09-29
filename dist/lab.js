@@ -3,6 +3,65 @@ import { log } from "./log.js";
 import { HORIZONS } from "./types.js";
 import { buildSeries, catalog, evaluateSymbol, } from "./strategies.js";
 const yieldLoop = () => new Promise((r) => setImmediate(r));
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+async function getJson(url) {
+    for (let n = 0;; n++) {
+        try {
+            await pause(120);
+            const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+            if (!r.ok)
+                throw Error(`HTTP ${r.status}`);
+            return (await r.json());
+        }
+        catch (e) {
+            if (n === 3)
+                throw e;
+            await pause(1000 * 2 ** n);
+        }
+    }
+}
+// Bybit/OKX do not publish taker-buy volume per candle; it is set to half the volume,
+// so the order-flow strategy family simply never fires on these sources.
+function candle(t, o, h, l, c, v) {
+    return {
+        t,
+        end: t + 59999,
+        o: +o,
+        h: +h,
+        l: +l,
+        c: +c,
+        v: +v,
+        buy: +v / 2,
+        quote: +v * +c,
+    };
+}
+async function bybit(symbol, start, now) {
+    const out = [];
+    for (let s = start; s < now - 60000; s += 1000 * 60000) {
+        const r = await getJson(`https://api.bybit.com/v5/market/kline?category=spot&symbol=${symbol}&interval=1&limit=1000&start=${s}&end=${s + 999 * 60000}`);
+        if (r.retCode !== 0)
+            throw Error(`retCode ${r.retCode}`);
+        for (const x of r.result.list)
+            out.push(candle(+x[0], x[1], x[2], x[3], x[4], x[5]));
+    }
+    return out;
+}
+async function okx(symbol, start, now) {
+    const out = [], inst = symbol.replace(/USDT$/, "-USDT");
+    let after = now;
+    while (after > start) {
+        const r = await getJson(`https://www.okx.com/api/v5/market/history-candles?instId=${inst}&bar=1m&limit=100&after=${after}`);
+        if (r.code !== "0")
+            throw Error(`code ${r.code}`);
+        if (!r.data.length)
+            break;
+        for (const x of r.data)
+            if (x[8] === "1" && +x[0] >= start)
+                out.push(candle(+x[0], x[1], x[2], x[3], x[4], x[5]));
+        after = +r.data[r.data.length - 1][0];
+    }
+    return out;
+}
 // Downloads real 1m history, validates every strategy family and keeps only the approved ones.
 export class StrategyLab {
     rest;
@@ -29,16 +88,49 @@ export class StrategyLab {
     stop() {
         clearInterval(this.timer);
     }
+    sources = {};
+    // Tries Binance first, then Bybit and OKX; any liquid exchange tracks the same market price.
     async fetch(symbol) {
-        const now = this.rest.now(), from = now - config.STRATEGY_DAYS * 86400000;
-        let cs = (this.history.get(symbol) || []).filter((c) => c.t >= from);
-        let start = cs.length ? cs[cs.length - 1].t + 60000 : from;
+        const now = this.rest.now(), from = now - config.STRATEGY_DAYS * 86400000, errors = [];
+        for (const [name, load] of [
+            ["Binance", this.binance],
+            ["Bybit", bybit],
+            ["OKX", okx],
+        ]) {
+            try {
+                const kept = this.sources[symbol] === name
+                    ? (this.history.get(symbol) || []).filter((c) => c.t >= from)
+                    : [];
+                const since = kept.length ? kept[kept.length - 1].t + 60000 : from;
+                const fresh = await load.call(this, symbol, since, now);
+                const cs = [
+                    ...new Map([...kept, ...fresh]
+                        .filter((c) => c.end < now &&
+                        Object.values(c).every(Number.isFinite) &&
+                        c.c > 0)
+                        .map((c) => [c.t, c])).values(),
+                ].sort((a, b) => a.t - b.t);
+                if (cs.length < config.STRATEGY_DAYS * 1440 * 0.8)
+                    throw Error(`só ${cs.length} candles`);
+                this.history.set(symbol, cs);
+                this.sources[symbol] = name;
+                return cs;
+            }
+            catch (e) {
+                errors.push(`${name}: ${e instanceof Error ? e.message : e}`);
+                log.warn({ symbol, source: name, err: e }, "fonte de histórico falhou");
+            }
+        }
+        throw Error(`HISTÓRICO INDISPONÍVEL PARA ${symbol} (${errors.join("; ")})`);
+    }
+    async binance(symbol, start, now) {
+        const out = [];
         while (start < now - 60000) {
             const raw = await this.rest.get(`/api/v3/klines?symbol=${symbol}&interval=1m&limit=1000&startTime=${start}`);
             if (!Array.isArray(raw) || !raw.length)
                 break;
-            for (const x of raw) {
-                const c = {
+            for (const x of raw)
+                out.push({
                     t: +x[0],
                     o: +x[1],
                     h: +x[2],
@@ -48,17 +140,12 @@ export class StrategyLab {
                     end: +x[6],
                     quote: +x[7],
                     buy: +x[9],
-                };
-                if (c.end < now && Object.values(c).every(Number.isFinite) && c.c > 0)
-                    cs.push(c);
-            }
+                });
             start = Number(raw[raw.length - 1][0]) + 60000;
             if (raw.length < 1000)
                 break;
         }
-        cs = [...new Map(cs.map((c) => [c.t, c])).values()].sort((a, b) => a.t - b.t);
-        this.history.set(symbol, cs);
-        return cs;
+        return out;
     }
     async run() {
         if (this.running)
@@ -67,13 +154,11 @@ export class StrategyLab {
         try {
             this.status = this.evaluations.length
                 ? "REVALIDANDO COM DADOS NOVOS"
-                : "BAIXANDO HISTÓRICO REAL (BINANCE 1m)";
+                : "BAIXANDO HISTÓRICO REAL DE 1 MINUTO";
             const all = [];
             let from = Infinity, to = 0;
             for (const symbol of symbols) {
                 const cs = await this.fetch(symbol);
-                if (cs.length < 5000)
-                    throw Error(`HISTÓRICO INSUFICIENTE PARA ${symbol}`);
                 from = Math.min(from, cs[0].t);
                 to = Math.max(to, cs[cs.length - 1].end);
                 this.status = `BACKTEST EM ANDAMENTO (${symbol})`;
@@ -137,6 +222,7 @@ export class StrategyLab {
             payout: config.PAYOUT,
             minTrades: config.STRATEGY_MIN_TRADES,
             z: config.STRATEGY_Z,
+            sources: this.sources,
             tested: this.evaluations.length,
             approved: this.evaluations.filter((x) => x.approved).length,
             evaluations: this.evaluations,

@@ -152,6 +152,7 @@ type Lab = {
   historyTo: number | null;
   breakEven: number;
   minTrades: number;
+  sources?: Record<string, string>;
   tested: number;
   approved: number;
   evaluations: {
@@ -836,7 +837,12 @@ function App() {
                   </strong>
                 </div>
                 <div>
-                  <span>Histórico testado</span>
+                  <span>
+                    Histórico testado
+                    {lab?.sources && Object.keys(lab.sources).length
+                      ? ` · ${[...new Set(Object.values(lab.sources))].join(", ")}`
+                      : ""}
+                  </span>
                   <strong>
                     <small>
                       {lab?.historyFrom
