@@ -1,3 +1,4 @@
+import { contextAllows, structuralStrategies } from "./price-context.js";
 export const WARMUP = 300;
 function ema(a, n, alpha = 2 / (n + 1)) {
     const out = new Float64Array(a.length).fill(NaN);
@@ -187,7 +188,17 @@ export function catalog() {
                     ? -1
                     : 0;
         }));
-    return out;
+    out.push(...structuralStrategies());
+    return out.map((spec) => ({
+        ...spec,
+        id: spec.id.includes(":ctx2")
+            ? spec.id
+            : spec.id.replace(/:(seguir|reverter)$/, ":ctx2:$1"),
+        signal: (s, i) => {
+            const d = spec.signal(s, i);
+            return contextAllows(s, i, d) ? d : 0;
+        },
+    }));
 }
 // One-sided Wilson lower bound of the win rate.
 export function wilson(wins, n, z) {

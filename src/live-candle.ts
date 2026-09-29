@@ -2,8 +2,11 @@ import type { Candle, MarketState } from "./types.js";
 // Use the exchange's forming OHLC as the baseline, including trades before connection.
 // Only trades newer than that snapshot extend its price/volume. Never publish an old minute.
 export function liveCandle(s: MarketState): Candle | null {
-  if (!s.connected || !s.trade) return null;
-  const start = Math.floor(s.trade.t / 60000) * 60000;
+  if (!s.connected || (!s.trade && !s.forming)) return null;
+  const start = Math.max(
+    s.forming?.t ?? 0,
+    Math.floor((s.trade?.t ?? 0) / 60000) * 60000,
+  );
   const base = s.forming?.t === start ? s.forming : undefined;
   const trades = s.trades.filter(
     (t) => t.t >= start && (!base || t.t > (s.formingAt ?? 0)),
