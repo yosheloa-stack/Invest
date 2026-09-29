@@ -7,8 +7,10 @@ import {
   type StrategySpec,
 } from "../src/strategies";
 import type { Candle } from "../src/types";
-export type Study = "ema" | "bb" | "vwap" | "vol" | "rsi";
+export { levelsAt } from "../src/strategies";
+export type Study = "sr" | "ema" | "bb" | "vwap" | "vol" | "rsi";
 export const STUDIES: { id: Study; label: string }[] = [
+  { id: "sr", label: "Suporte e resistência" },
   { id: "ema", label: "EMA 9/21/50" },
   { id: "bb", label: "Bollinger" },
   { id: "vwap", label: "VWAP" },
@@ -33,8 +35,16 @@ export const series = (bars: Bar[]): Series =>
   );
 // Which indicators a strategy reads, so selecting it switches them on.
 export function studiesFor(id: string | undefined): Study[] {
-  const family = id?.split(":")[0];
+  const family = id?.split(":")[0],
+    extra: Study[] =
+      id?.endsWith(":tendencia") || id?.endsWith(":lateral") ? ["ema"] : [];
+  return [...extra, ...byFamily(family)];
+}
+function byFamily(family: string | undefined): Study[] {
   switch (family) {
+    case "sr-toque":
+    case "sr-rompimento":
+      return ["sr"];
     case "rsi":
       return ["rsi"];
     case "bollinger":
@@ -75,8 +85,17 @@ export const FAMILY_TEXT: Record<string, string> = {
     "Olha quem está agredindo (compradores ou vendedores) com volume alto.",
   exaustao: "Procura um candle muito maior que o normal (ATR).",
   "rsi-bollinger": "RSI no extremo e candle fora da Bollinger ao mesmo tempo.",
+  "sr-toque":
+    "Espera o preço tocar um suporte ou resistência que já segurou o preço antes.",
+  "sr-rompimento":
+    "Espera o candle fechar além de um suporte ou resistência já testado.",
 };
 export const directionText = (id: string) =>
-  id.endsWith(":reverter")
+  (id.includes(":reverter")
     ? "Entra contra o movimento."
-    : "Entra a favor do movimento.";
+    : "Entra a favor do movimento.") +
+  (id.endsWith(":tendencia")
+    ? " Só opera a favor da tendência (não vende em alta nem compra em baixa)."
+    : id.endsWith(":lateral")
+      ? " Só opera com o mercado lateral."
+      : "");

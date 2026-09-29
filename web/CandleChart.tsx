@@ -26,6 +26,7 @@ import {
   SPECS,
   STUDIES,
   params,
+  levelsAt,
   series as buildSeries,
   studiesFor,
   type Bar,
@@ -81,6 +82,7 @@ type Legend = {
   bbDn: number;
   vwap: number;
 };
+type Reading = { trend: -1 | 0 | 1; sup?: number; res?: number };
 const n2 = (x: number) =>
   Number.isFinite(x) ? x.toFixed(2).replace(".", ",") : "—";
 // TradingView-style live chart: 1/5/15-minute candles, the indicators the strategies read,
@@ -110,6 +112,7 @@ export default function CandleChart({
     lines = useRef<Lines | undefined>(undefined),
     rsi = useRef<ISeriesApi<"Line"> | undefined>(undefined),
     rsiLevels = useRef<IPriceLine[]>([]),
+    srLines = useRef<IPriceLine[]>([]),
     markers = useRef<ISeriesMarkersPluginApi<Time> | undefined>(undefined),
     mark = useRef<{ applyOptions: (o: object) => void } | undefined>(undefined),
     hist = useRef<Bar[]>([]),
@@ -130,7 +133,10 @@ export default function CandleChart({
     [hover, setHover] = useState(false),
     [left, setLeft] = useState("--:--"),
     [menu, setMenu] = useState(false),
-    [studies, setStudies] = useState<Set<Study>>(() => new Set(["ema", "vol"])),
+    [studies, setStudies] = useState<Set<Study>>(
+      () => new Set(["sr", "ema", "vol"]),
+    ),
+    [reading, setReading] = useState<Reading | null>(null),
     [minute, setMinute] = useState(0);
   const p = useMemo(() => params(focus?.id), [focus?.id]);
   useEffect(() => {
@@ -583,27 +589,56 @@ export default function CandleChart({
       size = tf * 60000,
       bucket = (t: number) => sec(Math.floor(t / size) * size),
       spec = focus ? SPECS.get(focus.id) : undefined;
-    if (spec && bars.length > 300) {
+    // Where the selected strategy fired: arrow up = Compra, arrow down = Venda, with the expiry.
+    // Strategies that failed the test are drawn faded and marked "estudo": not a signal.
+    if (spec && focus && bars.length > 300) {
       const s = buildSeries(bars.slice(0, -1)),
-        from = Math.max(300, s.c.length - 400 * tf);
-      for (let i = from; i < s.c.length; i++) {
+        from = Math.max(300, s.c.length - 400 * tf),
+        fade = (c: string) => (focus.approved ? c : `${c}80`),
+        hits: { i: number; d: 1 | -1 }[] = [];
+      // Same spacing as the backtest: no new entry while one is still open.
+      for (let i = from, next = from; i < s.c.length; i++) {
+        if (i < next) continue;
         const d = spec.signal(s, i);
         if (!d) continue;
+        hits.push({ i, d });
+        next = i + Math.max(focus.horizon, 5);
+      }
+      // Labels only where they don't pile on each other (newest first, up to 6).
+      const named = new Set<number>(),
+        taken = [...signals, ...(data?.signals || [])].map(
+          (x) => (x.entryAt ?? x.t) / 60000,
+        ),
+        near = (i: number) =>
+          taken.some((m) => Math.abs(m - s.t[i] / 60000) < 12 * tf);
+      for (
+        let k = hits.length - 1, gap = Infinity;
+        k >= 0 && named.size < 6;
+        k--
+      )
+        if (gap - hits[k].i >= 12 * tf && !near(hits[k].i)) {
+          named.add(k);
+          gap = hits[k].i;
+        }
+      hits.forEach(({ i, d }, k) => {
+        const buy = d === 1;
         out.push({
           time: bucket(s.t[i]),
-          position: d === 1 ? "belowBar" : "aboveBar",
-          shape: "circle",
-          size: 0.6,
-          color: focus!.approved
-            ? d === 1
-              ? pal.current.up
-              : pal.current.down
-            : pal.current.orange,
+          position: buy ? "belowBar" : "aboveBar",
+          shape: buy ? "arrowUp" : "arrowDown",
+          size: focus.approved ? 1 : 0.8,
+          color: fade(buy ? pal.current.up : pal.current.down),
+          text: named.has(k)
+            ? `${buy ? "Compra" : "Venda"} ${focus.horizon}m${focus.approved ? "" : " · estudo"}`
+            : undefined,
         });
-      }
+      });
     }
     const first = bars[0]?.t ?? 0;
-    for (const s of [...signals, ...(data?.signals || [])]) {
+    const own = new Map(
+      [...(data?.signals || []), ...signals].map((x) => [x.id, x]),
+    );
+    for (const s of own.values()) {
       if ((s.entryAt ?? s.t) < first) continue;
       const buy = s.direction === "COMPRA";
       out.push({
@@ -637,7 +672,48 @@ export default function CandleChart({
     });
     unique.sort((a, b) => Number(a.time) - Number(b.time));
     markers.current.setMarkers(unique);
-  }, [data, focus, signals, minute, tf]);
+  }, [data, focus, signals, minute, tf, theme]);
+  // Support/resistance of the visible timeframe as price lines, plus the market reading.
+  useEffect(() => {
+    const c = candles.current;
+    if (!c) return;
+    for (const l of srLines.current) c.removePriceLine(l);
+    srLines.current = [];
+    const bars = view.current.slice(0, -1);
+    if (bars.length < 80) {
+      setReading(null);
+      return;
+    }
+    const s = buildSeries(bars.slice(-600)),
+      j = s.c.length - 1,
+      last = s.c[j],
+      all = levelsAt(s, j, 12),
+      near = (k: "sup" | "res") =>
+        all
+          .filter((x) => x.kind === k)
+          .sort((a, b) => Math.abs(a.price - last) - Math.abs(b.price - last))
+          .slice(0, 2),
+      sups = near("sup"),
+      ress = near("res");
+    setReading({
+      trend: s.trend[j] as -1 | 0 | 1,
+      sup: sups[0]?.price,
+      res: ress[0]?.price,
+    });
+    if (!studies.has("sr")) return;
+    srLines.current = [...sups, ...ress].map((x) =>
+      c.createPriceLine({
+        price: x.price,
+        color:
+          (x.kind === "sup" ? pal.current.up : pal.current.down) +
+          (x.touches >= 3 ? "" : "b3"),
+        lineWidth: x.touches >= 3 ? 2 : 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: `${x.kind === "sup" ? "Suporte" : "Resistência"} ${x.touches}x`,
+      }),
+    );
+  }, [minute, tf, studies, theme, data]);
   const toggle = (s: Study) =>
     setStudies((x) => {
       const n = new Set(x);
@@ -657,7 +733,9 @@ export default function CandleChart({
             ? "Médias móveis 9, 21, 50"
             : s === "vwap"
               ? "VWAP"
-              : "Volume";
+              : s === "sr"
+                ? "Suporte e resistência"
+                : "Volume";
   return (
     <div className="tv-chart">
       <div className="tv-toolbar" role="toolbar" aria-label="Gráfico">
@@ -771,13 +849,42 @@ export default function CandleChart({
             )}
           </div>
         )}
-        {focus && (
-          <div className="tv-focus">
-            <i className={focus.approved ? "ok" : ""} />
-            {focus.label} · {focus.horizon} min ·{" "}
-            {pct(focus.outOfSample.winRate)} no teste
-          </div>
-        )}
+        <div className="tv-notes">
+          {reading && (
+            <div
+              className={`tv-read ${reading.trend === 1 ? "up" : reading.trend === -1 ? "down" : ""}`}
+            >
+              <b>
+                {reading.trend === 1
+                  ? "Tendência de alta"
+                  : reading.trend === -1
+                    ? "Tendência de baixa"
+                    : "Mercado lateral"}
+              </b>
+              <span>
+                {reading.trend === 1
+                  ? reading.sup
+                    ? `Melhor compra perto do suporte ${price(reading.sup)}. Evite vender.`
+                    : "Prefira compras. Evite vender."
+                  : reading.trend === -1
+                    ? reading.res
+                      ? `Melhor venda perto da resistência ${price(reading.res)}. Evite comprar.`
+                      : "Prefira vendas. Evite comprar."
+                    : reading.sup && reading.res
+                      ? `Compra perto de ${price(reading.sup)}, venda perto de ${price(reading.res)}.`
+                      : "Espere o preço chegar num suporte ou resistência."}
+              </span>
+            </div>
+          )}
+          {focus && (
+            <div className="tv-focus">
+              <i className={focus.approved ? "ok" : ""} />
+              {focus.label} · {focus.horizon} min ·{" "}
+              {pct(focus.outOfSample.winRate)} no teste
+              {!focus.approved && <em>reprovada: setas são só estudo</em>}
+            </div>
+          )}
+        </div>
         {!data && !error && (
           <div className="chart-note">Carregando candles…</div>
         )}

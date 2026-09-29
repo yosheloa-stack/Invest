@@ -786,11 +786,48 @@ select {
 .tv-title span em {
   margin-left: 2px;
 }
-.tv-focus {
+.tv-notes {
   position: absolute;
   left: 10px;
   bottom: 34px;
   z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: calc(100% - 90px);
+  pointer-events: none;
+}
+.tv-read {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  background: var(--overlay);
+  border: 1px solid var(--line-2);
+  border-left: 3px solid var(--muted);
+  border-radius: 4px;
+  padding: 5px 10px;
+}
+.tv-read.up {
+  border-left-color: var(--up);
+}
+.tv-read.down {
+  border-left-color: var(--down);
+}
+.tv-read b {
+  font-weight: 600;
+}
+.tv-read.up b {
+  color: var(--up);
+}
+.tv-read.down b {
+  color: var(--down);
+}
+.tv-read span {
+  color: var(--muted);
+}
+.tv-focus {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -799,8 +836,11 @@ select {
   border: 1px solid var(--line-2);
   border-radius: 4px;
   padding: 3px 9px;
-  pointer-events: none;
-  max-width: calc(100% - 100px);
+  flex-wrap: wrap;
+}
+.tv-focus em {
+  font-style: normal;
+  color: var(--warn);
 }
 .tv-focus i {
   flex: 0 0 auto;
@@ -1600,6 +1640,10 @@ tr.ok td {
   }
   .tv-focus {
     display: none;
+  }
+  .tv-read {
+    font-size: 11px;
+    padding: 4px 8px;
   }
   .tv-quote,
   .side-block {

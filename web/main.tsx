@@ -623,7 +623,7 @@ function Expiries({
               {!fresh
                 ? "Sem dados"
                 : run
-                  ? countdown((run.due ?? now) - now)
+                  ? `${run.direction === "COMPRA" ? "Compra" : "Venda"} ${countdown((run.due ?? now) - now)}`
                   : active
                     ? dir === "COMPRA"
                       ? "Compra"
@@ -683,8 +683,8 @@ function StrategyPanel({
           <strong>{focus.label}</strong>
           <p>
             {FAMILY_TEXT[focus.id.split(":")[0]] || ""}{" "}
-            {directionText(focus.id)} Os pontos no gráfico mostram onde ela
-            disparou.
+            {directionText(focus.id)} As setas no gráfico mostram onde ela
+            disparou, com Compra ou Venda e a expiração.
           </p>
           <dl>
             <div>

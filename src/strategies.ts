@@ -20,6 +20,11 @@ export interface Series {
   vwap: Float64Array;
   sigma: Float64Array;
   volAvg: Float64Array;
+  // Market regime: 1 uptrend, -1 downtrend, 0 sideways (see trendOf).
+  trend: Int8Array;
+  // Nearest support below / resistance above the close, from confirmed swing points (NaN if none).
+  sup: Float64Array;
+  res: Float64Array;
 }
 type Dir = -1 | 0 | 1;
 export interface StrategySpec {
@@ -123,6 +128,12 @@ export function buildSeries(cs: Candle[]): Series {
   const bb = rolling(c, 20),
     vol = rolling(ret, 120),
     va = rolling(v, 60);
+  const e21 = ema(c, 21),
+    e50 = ema(c, 50),
+    atr = ema(tr, 14, 1 / 14);
+  const trend = new Int8Array(n);
+  for (let i = TREND_LOOK; i < n; i++) trend[i] = trendOf(c, e21, e50, atr, i);
+  const { sup, res } = swingLevels(h, l, c, atr);
   const vwap = new Float64Array(n);
   let day = -1,
     pv = 0,
@@ -149,38 +160,181 @@ export function buildSeries(cs: Candle[]): Series {
     rsi7: rsi(c, 7),
     rsi14: rsi(c, 14),
     ema9: ema(c, 9),
-    ema21: ema(c, 21),
-    ema50: ema(c, 50),
+    ema21: e21,
+    ema50: e50,
     bbMid: bb.mean,
     bbStd: bb.std,
-    atr: ema(tr, 14, 1 / 14),
+    atr,
     vwap,
     sigma: vol.std,
     volAvg: va.mean,
+    trend,
+    sup,
+    res,
   };
 }
+const TREND_LOOK = 10;
+// Uptrend: EMA21 above EMA50, EMA50 rising by a meaningful amount (vs ATR) and price above EMA50.
+// Mirror for downtrend; anything else is a sideways market.
+function trendOf(
+  c: Float64Array,
+  e21: Float64Array,
+  e50: Float64Array,
+  atr: Float64Array,
+  i: number,
+): Dir {
+  const slope = (e50[i] - e50[i - TREND_LOOK]) / atr[i];
+  if (!Number.isFinite(slope)) return 0;
+  if (e21[i] > e50[i] && slope > 0.3 && c[i] > e50[i]) return 1;
+  if (e21[i] < e50[i] && slope < -0.3 && c[i] < e50[i]) return -1;
+  return 0;
+}
+export const SWING = 5,
+  SWING_WINDOW = 240;
+export interface Level {
+  price: number;
+  touches: number;
+  kind: "sup" | "res";
+  last: number;
+}
+// Swing highs/lows: the bar's high (low) is the extreme of SWING bars on each side.
+// A swing at j is only known at j + SWING, so nothing here looks ahead.
+function swings(h: Float64Array, l: Float64Array) {
+  const hi: number[] = [],
+    lo: number[] = [];
+  for (let j = SWING; j < h.length - SWING; j++) {
+    let isHi = true,
+      isLo = true;
+    for (let k = 1; k <= SWING && (isHi || isLo); k++) {
+      if (h[j - k] > h[j] || h[j + k] >= h[j]) isHi = false;
+      if (l[j - k] < l[j] || l[j + k] <= l[j]) isLo = false;
+    }
+    if (isHi) hi.push(j);
+    if (isLo) lo.push(j);
+  }
+  return { hi, lo };
+}
+// Levels touched at least twice (swing points within 0.3 ATR of each other) in the last
+// SWING_WINDOW bars; support is the nearest one below the close, resistance the nearest above.
+function swingLevels(
+  h: Float64Array,
+  l: Float64Array,
+  c: Float64Array,
+  atr: Float64Array,
+) {
+  const n = c.length,
+    sup = new Float64Array(n).fill(NaN),
+    res = new Float64Array(n).fill(NaN),
+    { hi, lo } = swings(h, l),
+    pts = [
+      ...hi.map((j) => ({ j, p: h[j] })),
+      ...lo.map((j) => ({ j, p: l[j] })),
+    ].sort((a, b) => a.j - b.j);
+  let start = 0,
+    end = 0;
+  for (let i = 0; i < n; i++) {
+    while (end < pts.length && pts[end].j + SWING <= i) end++;
+    while (start < end && pts[start].j < i - SWING_WINDOW) start++;
+    const a = atr[i];
+    if (!Number.isFinite(a) || end - start < 2) continue;
+    const tol = 0.3 * a;
+    let s = NaN,
+      r = NaN;
+    for (let x = start; x < end; x++) {
+      const p = pts[x].p;
+      if (Math.abs(p - c[i]) > 6 * a) continue;
+      if (
+        p < c[i] ? !(p > s) && !Number.isNaN(s) : !(p < r) && !Number.isNaN(r)
+      )
+        continue;
+      let touches = 0;
+      for (let y = start; y < end; y++)
+        if (Math.abs(pts[y].p - p) <= tol) touches++;
+      if (touches < 2) continue;
+      if (p < c[i]) s = p;
+      else r = p;
+    }
+    sup[i] = s;
+    res[i] = r;
+  }
+  return { sup, res };
+}
+// Support/resistance zones for drawing: every level touched at least twice in the window,
+// merged when close together, strongest first.
+export function levelsAt(s: Series, i = s.c.length - 1, max = 6): Level[] {
+  const a = s.atr[i];
+  if (!Number.isFinite(a)) return [];
+  const from = Math.max(0, i - SWING_WINDOW),
+    { hi, lo } = swings(s.h.subarray(from, i + 1), s.l.subarray(from, i + 1)),
+    pts = [
+      ...hi.map((j) => ({ j: j + from, p: s.h[j + from] })),
+      ...lo.map((j) => ({ j: j + from, p: s.l[j + from] })),
+    ].sort((x, y) => x.p - y.p),
+    tol = 0.3 * a,
+    out: Level[] = [];
+  let group: typeof pts = [];
+  const flush = () => {
+    if (group.length >= 2) {
+      const price = group.reduce((m, x) => m + x.p, 0) / group.length;
+      out.push({
+        price,
+        touches: group.length,
+        kind: price < s.c[i] ? "sup" : "res",
+        last: s.t[Math.max(...group.map((x) => x.j))],
+      });
+    }
+    group = [];
+  };
+  for (const pt of pts) {
+    if (group.length && pt.p - group[0].p > tol) flush();
+    group.push(pt);
+  }
+  flush();
+  return out
+    .sort(
+      (x, y) =>
+        y.touches - x.touches ||
+        Math.abs(x.price - s.c[i]) - Math.abs(y.price - s.c[i]),
+    )
+    .slice(0, max);
+}
 const sgn = (x: number): Dir => (x > 0 ? 1 : x < 0 ? -1 : 0);
-// Each family is tested both ways ("seguir" follows the move, "reverter" fades it); the data decides.
+// Each family is tested both ways ("seguir" follows the move, "reverter" fades it), and each way
+// three times: in any market, only in the direction of the trend (never selling an uptrend), and
+// only in a sideways market. Parameters and filter are picked in-sample; the data decides.
 function both(
   family: string,
   key: string,
   label: string,
   base: (s: Series, i: number) => Dir,
 ): StrategySpec[] {
-  return [
-    {
-      id: `${family}:${key}:seguir`,
-      family,
-      label: `${label} · seguir`,
-      signal: base,
-    },
-    {
-      id: `${family}:${key}:reverter`,
-      family,
-      label: `${label} · reverter`,
-      signal: (s, i) => (-base(s, i) || 0) as Dir,
-    },
+  const ways: [string, string, (s: Series, i: number) => Dir][] = [
+    ["seguir", "seguir", base],
+    ["reverter", "reverter", (s, i) => (-base(s, i) || 0) as Dir],
   ];
+  return ways.flatMap(([k, text, f]) => [
+    {
+      id: `${family}:${key}:${k}`,
+      family,
+      label: `${label} · ${text}`,
+      signal: f,
+    },
+    {
+      id: `${family}:${key}:${k}:tendencia`,
+      family,
+      label: `${label} · ${text} a favor da tendência`,
+      signal: (s: Series, i: number) => {
+        const d = f(s, i);
+        return d && d === s.trend[i] ? d : 0;
+      },
+    },
+    {
+      id: `${family}:${key}:${k}:lateral`,
+      family,
+      label: `${label} · ${text} só em lateral`,
+      signal: (s: Series, i: number) => (s.trend[i] === 0 ? f(s, i) : 0),
+    },
+  ]);
 }
 export function catalog(): StrategySpec[] {
   const out: StrategySpec[] = [];
@@ -312,6 +466,39 @@ export function catalog(): StrategySpec[] {
             : d < 0 && s.rsi7[i] < lv
               ? -1
               : 0;
+        },
+      ),
+    );
+  // Support/resistance from swing points touched at least twice.
+  for (const tol of [0.1, 0.3])
+    out.push(
+      ...both(
+        "sr-toque",
+        String(tol),
+        `Toque no suporte/resistência (tol ${tol} ATR)`,
+        (s, i) => {
+          const a = tol * s.atr[i];
+          if (s.l[i] <= s.sup[i] + a && s.c[i] > s.sup[i] && s.c[i] > s.o[i])
+            return 1;
+          if (s.h[i] >= s.res[i] - a && s.c[i] < s.res[i] && s.c[i] < s.o[i])
+            return -1;
+          return 0;
+        },
+      ),
+    );
+  for (const k of [0.1, 0.3])
+    out.push(
+      ...both(
+        "sr-rompimento",
+        String(k),
+        `Rompimento de suporte/resistência (> ${k} ATR)`,
+        (s, i) => {
+          if (i < 1) return 0;
+          const a = k * s.atr[i];
+          if (s.c[i] > s.res[i - 1] + a && s.c[i - 1] <= s.res[i - 1]) return 1;
+          if (s.c[i] < s.sup[i - 1] - a && s.c[i - 1] >= s.sup[i - 1])
+            return -1;
+          return 0;
         },
       ),
     );
