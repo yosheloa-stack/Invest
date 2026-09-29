@@ -166,6 +166,7 @@ export type CandleData = {
     l: number;
     c: number;
     v: number;
+    buy?: number;
   }[];
   signals: Signal[];
   triggers: Trigger[];

@@ -39,7 +39,7 @@ export default function Auth({
         <Scene3D />
       </Suspense>
       <div className="auth-copy">
-        <div className="logo-mark" aria-hidden="true">
+        <div className="mark big" aria-hidden="true">
           <span />
           <span />
           <span />

@@ -246,20 +246,28 @@ app.get("/api/models", (_req, res) =>
 app.get("/api/candles/:symbol", (req, res) => {
   const s = market.states.get(String(req.params.symbol).toUpperCase());
   if (!s) return void res.status(404).json({ error: "Ativo não monitorado" });
-  const cs = s.candles["1m"],
-    from = cs[Math.max(0, cs.length - 240)]?.t ?? 0,
+  const limit = Math.min(1000, Math.max(60, Number(req.query.limit) || 240)),
+    cs = s.candles["1m"],
+    from = cs[Math.max(0, cs.length - limit)]?.t ?? 0,
     now = market.rest.now();
   res.json({
     symbol: s.symbol,
-    candles: cs
-      .slice(-240)
-      .map((c) => ({ t: c.t, o: c.o, h: c.h, l: c.l, c: c.c, v: c.v })),
+    candles: cs.slice(-limit).map((c) => ({
+      t: c.t,
+      o: c.o,
+      h: c.h,
+      l: c.l,
+      c: c.c,
+      v: c.v,
+      buy: c.buy,
+    })),
     signals: recent
       .filter((x) => x.symbol === s.symbol && x.t >= from)
       .map(({ features, ...x }) => x),
     triggers: lab.triggers(
       s.symbol,
       cs.filter((c) => c.end < now),
+      limit,
     ),
   });
 });
@@ -267,6 +275,39 @@ wss.on("connection", (ws, req) => {
   ws.send(JSON.stringify(view()));
   ws.on("error", (e) => log.warn({ err: e }, "dashboard socket"));
 });
+// Forming 1m candle of every asset built from the live trades, pushed 4x per second.
+let lastTicks = "";
+function liveTicks() {
+  if (!wss.clients.size) return;
+  const k: Record<string, number[]> = {};
+  for (const s of market.states.values()) {
+    if (!s.trade) continue;
+    const start = Math.floor(s.trade.t / 60000) * 60000,
+      cs = s.candles["1m"],
+      prev = cs[cs.length - 1],
+      trades = s.trades.filter((x) => x.t >= start);
+    if (!trades.length) continue;
+    let h = -Infinity,
+      l = Infinity,
+      v = 0,
+      buy = 0;
+    for (const x of trades) {
+      h = Math.max(h, x.p);
+      l = Math.min(l, x.p);
+      v += x.q;
+      if (x.buy) buy += x.q;
+    }
+    const o = prev && prev.t === start ? prev.o : trades[0].p;
+    k[s.symbol] = [start, o, Math.max(h, o), Math.min(l, o), s.trade.p, v, buy];
+  }
+  const body = JSON.stringify(k);
+  if (body === lastTicks) return;
+  lastTicks = body;
+  const payload = `{"type":"tick","t":${market.rest.now()},"k":${body}}`;
+  for (const ws of wss.clients)
+    if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 250000)
+      ws.send(payload);
+}
 function broadcast() {
   const payload = JSON.stringify(view());
   for (const ws of wss.clients)
@@ -482,6 +523,7 @@ async function newsTick() {
   }
 }
 const timer = setInterval(() => void tick(), 1000),
+  tickTimer = setInterval(liveTicks, 250),
   newsTimer = setInterval(() => void newsTick(), 30000);
 server.listen(config.PORT, "0.0.0.0", () =>
   log.info({ port: config.PORT }, "dashboard iniciado"),
@@ -497,6 +539,7 @@ async function shutdown() {
   if (stopping) return;
   stopping = true;
   clearInterval(timer);
+  clearInterval(tickTimer);
   clearInterval(newsTimer);
   market.stop();
   lab.stop();

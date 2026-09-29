@@ -1,4 +1,8 @@
-import "@fontsource-variable/sora";
+import "@fontsource/ibm-plex-sans/400.css";
+import "@fontsource/ibm-plex-sans/500.css";
+import "@fontsource/ibm-plex-sans/600.css";
+import "@fontsource/ibm-plex-sans-condensed/500.css";
+import "@fontsource/ibm-plex-sans-condensed/600.css";
 import "./style.css";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -18,6 +22,8 @@ import {
   WifiOff,
 } from "lucide-react";
 import Auth from "./Auth";
+import { lastMove, liveBar, pushTick, useTicks } from "./live";
+import { FAMILY_TEXT, directionText } from "./studies";
 import CandleChart from "./CandleChart";
 import SignalDock from "./SignalDock";
 import {
@@ -33,6 +39,7 @@ import {
 } from "./format";
 import type { Evaluation, Lab, Metric, News, State, User } from "./types";
 const Scene3D = lazy(() => import("./Scene3D"));
+const Market3D = lazy(() => import("./Market3D"));
 type Tab = "trade" | "lab" | "history" | "news" | "stats" | "system";
 const TABS: { id: Tab; label: string; icon: typeof Activity }[] = [
   { id: "trade", label: "Operar", icon: CandlestickChart },
@@ -59,7 +66,9 @@ function useLiveState(enabled: boolean) {
       ws.onopen = () => setConnected(true);
       ws.onmessage = (e) => {
         try {
-          setState(JSON.parse(e.data));
+          const msg = JSON.parse(e.data);
+          if (msg.type === "tick") pushTick(msg);
+          else setState(msg);
           setLast(Date.now());
         } catch {
           /* ignore malformed frame */
@@ -130,12 +139,26 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   const { state, connected, last } = useLiveState(true),
     lab = useLab(true),
     [tab, setTab] = useState<Tab>("trade"),
-    [selected, setSelected] = useState("BTCUSDT"),
+    [selected, setSelected] = useState(() => {
+      try {
+        return localStorage.getItem("yosh-asset") || "BTCUSDT";
+      } catch {
+        return "BTCUSDT";
+      }
+    }),
     [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(t);
   }, []);
+  const select = (s: string) => {
+    setSelected(s);
+    try {
+      localStorage.setItem("yosh-asset", s);
+    } catch {
+      /* private mode */
+    }
+  };
   const fresh = connected && now - last < 6000,
     serverNow = state ? state.time + (now - last) : now,
     asset =
@@ -148,13 +171,13 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       [state],
     );
   const open = (symbol: string) => {
-    setSelected(symbol);
+    select(symbol);
     setTab("trade");
   };
   return (
     <div className="shell">
       <nav className="rail" aria-label="Principal">
-        <div className="logo-mark small" aria-hidden="true">
+        <div className="mark" aria-hidden="true">
           <span />
           <span />
           <span />
@@ -166,7 +189,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
             aria-current={tab === t.id ? "page" : undefined}
             onClick={() => setTab(t.id)}
           >
-            <t.icon size={20} />
+            <t.icon size={19} strokeWidth={1.8} />
             <span>{t.label}</span>
           </button>
         ))}
@@ -174,15 +197,19 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       <div className="page">
         <header className="top">
           <div className="brand">
-            <strong>Yosh Scanner</strong>
-            <span className={fresh ? "live" : "offline"}>
+            <strong>Yosh</strong>
+            <span>Scanner</span>
+          </div>
+          <TickerTape state={state} onOpen={open} />
+          <div className="top-right">
+            <span className={`conn ${fresh ? "live" : "off"}`}>
+              <i />
               {fresh ? "Ao vivo" : "Reconectando"}
             </span>
-          </div>
-          <div className="who">
-            <span>{user.name}</span>
+            <span className="clock">{clock(serverNow)}</span>
+            <span className="who">{user.name.split(" ")[0]}</span>
             <button className="icon" onClick={onLogout} aria-label="Sair">
-              <LogOut size={18} />
+              <LogOut size={17} />
             </button>
           </div>
         </header>
@@ -192,13 +219,13 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
             velhos; não entre em operação até voltar.
           </div>
         )}
-        <main className="content">
+        <main className={`content tab-${tab}`}>
           {tab === "trade" && (
             <TradeView
               state={state}
               lab={lab}
               selected={asset?.symbol ?? selected}
-              onSelect={setSelected}
+              onSelect={select}
               fresh={fresh}
               now={serverNow}
             />
@@ -222,6 +249,109 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     </div>
   );
 }
+// Live price with a brief flash in the direction of the last change.
+function LivePrice({
+  symbol,
+  fallback,
+  className = "",
+}: {
+  symbol: string;
+  fallback: number | null;
+  className?: string;
+}) {
+  useTicks();
+  const c = liveBar(symbol)?.c ?? fallback,
+    m = lastMove(symbol);
+  return (
+    <span
+      key={String(c)}
+      className={`lp ${m > 0 ? "flash-up" : m < 0 ? "flash-down" : ""} ${className}`}
+    >
+      {price(c)}
+    </span>
+  );
+}
+// Change over the last hour, recomputed against the live price.
+function liveChange(a: State["assets"][number]) {
+  const c = liveBar(a.symbol)?.c;
+  if (a.change == null || a.price == null || c == null) return a.change;
+  return c / (a.price / (1 + a.change)) - 1;
+}
+const signed = (x: number | null | undefined) =>
+  x == null ? "—" : `${x >= 0 ? "+" : ""}${pct(x, 2)}`;
+function TickerTape({
+  state,
+  onOpen,
+}: {
+  state: State | null;
+  onOpen: (s: string) => void;
+}) {
+  useTicks();
+  const list = state?.assets || [];
+  if (!list.length) return <div className="tape" />;
+  const row = (dup: boolean) =>
+    list.map((a) => {
+      const ch = liveChange(a);
+      return (
+        <button
+          key={a.symbol + dup}
+          tabIndex={dup ? -1 : 0}
+          aria-hidden={dup || undefined}
+          onClick={() => onOpen(a.symbol)}
+        >
+          <b>{ticker(a.symbol)}</b>
+          {price(liveBar(a.symbol)?.c ?? a.price)}
+          <em className={(ch ?? 0) >= 0 ? "up" : "down"}>{signed(ch)}</em>
+        </button>
+      );
+    });
+  return (
+    <div className="tape" aria-label="Cotações ao vivo">
+      <div className="tape-track">
+        {row(false)}
+        {row(true)}
+      </div>
+    </div>
+  );
+}
+function Watchlist({
+  state,
+  selected,
+  onSelect,
+}: {
+  state: State;
+  selected: string;
+  onSelect: (s: string) => void;
+}) {
+  useTicks();
+  return (
+    <div className="watch" role="tablist" aria-label="Ativos">
+      {state.assets.map((a) => {
+        const ch = liveChange(a);
+        return (
+          <button
+            key={a.symbol}
+            role="tab"
+            aria-selected={a.symbol === selected}
+            className={a.symbol === selected ? "on" : ""}
+            onClick={() => onSelect(a.symbol)}
+          >
+            <span className="w-name">
+              <b>{ticker(a.symbol)}</b>
+              <small>{COIN_NAMES[a.symbol] || a.symbol}</small>
+            </span>
+            <span className="w-num">
+              <LivePrice symbol={a.symbol} fallback={a.price} />
+              <small className={(ch ?? 0) >= 0 ? "up" : "down"}>
+                {signed(ch)}
+              </small>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 function TradeView({
   state,
   lab,
@@ -237,216 +367,296 @@ function TradeView({
   fresh: boolean;
   now: number;
 }) {
-  const [showAll, setShowAll] = useState(false);
+  useTicks();
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const evals = useMemo(
+    () =>
+      (lab?.evaluations || [])
+        .filter((e) => e.symbol === selected)
+        .sort(
+          (a, b) =>
+            Number(b.approved) - Number(a.approved) ||
+            (b.outOfSample.winRate ?? 0) - (a.outOfSample.winRate ?? 0),
+        ),
+    [lab, selected],
+  );
+  useEffect(() => setFocusId(null), [selected]);
+  const focus =
+    evals.find((e) => `${e.id}|${e.horizon}` === focusId) ?? evals[0];
   const asset = state?.assets.find((a) => a.symbol === selected);
-  const strategies = (lab?.evaluations || [])
-    .filter((e) => e.symbol === selected)
-    .sort((a, b) => (b.outOfSample.winRate ?? 0) - (a.outOfSample.winRate ?? 0))
-    .slice(0, 6);
-  const news = (state?.news || [])
-    .filter((n) =>
-      n.classification?.assets.some((x) => ticker(selected).startsWith(x)),
-    )
-    .slice(0, 3);
-  if (!state)
+  if (!state || !asset)
     return (
       <div className="hero-empty">
         <Suspense fallback={null}>
-          <Scene3D intensity={0.6} />
+          <Scene3D intensity={0.8} />
         </Suspense>
         <p>Conectando ao mercado…</p>
       </div>
     );
+  const ch = liveChange(asset),
+    news = (state.news || [])
+      .filter((n) =>
+        n.classification?.assets.some((x) => ticker(selected).startsWith(x)),
+      )
+      .slice(0, 3);
   return (
-    <>
-      <div className="assets" role="tablist" aria-label="Ativos">
-        {state.assets.map((a) => (
-          <button
-            key={a.symbol}
-            role="tab"
-            aria-selected={a.symbol === selected}
-            className={a.symbol === selected ? "asset on" : "asset"}
-            onClick={() => onSelect(a.symbol)}
-          >
-            <b>{ticker(a.symbol)}</b>
-            <span>{price(a.price)}</span>
-            <small className={(a.change ?? 0) >= 0 ? "up" : "down"}>
-              {a.change == null
-                ? "—"
-                : `${a.change >= 0 ? "+" : ""}${pct(a.change, 2)}`}
-            </small>
-          </button>
-        ))}
-      </div>
-      {asset && (
-        <div className="trade-grid">
-          <section className="chart-panel">
-            <Suspense fallback={null}>
-              <div className="chart-backdrop">
-                <Scene3D intensity={0.35} />
-              </div>
-            </Suspense>
-            <div className="chart-head">
-              <div>
-                <h1>{pair(asset.symbol)}</h1>
-                <span className="muted">
-                  {COIN_NAMES[asset.symbol] || asset.symbol} · candles de 1
-                  minuto
-                </span>
-              </div>
-              <div className="quote">
-                <strong>{price(asset.price)}</strong>
-                <span className={(asset.change ?? 0) >= 0 ? "up" : "down"}>
-                  {asset.change == null
-                    ? "—"
-                    : `${asset.change >= 0 ? "+" : ""}${pct(asset.change, 2)} na última hora`}
-                </span>
-              </div>
-            </div>
-            <CandleChart
+    <div className="desk">
+      <aside className="desk-left">
+        <h2 className="sr">Ativos</h2>
+        <Watchlist state={state} selected={selected} onSelect={onSelect} />
+      </aside>
+      <section className="desk-main">
+        <div className="pair-head">
+          <div className="pair-id">
+            <h1>{pair(asset.symbol)}</h1>
+            <span className="muted">{COIN_NAMES[asset.symbol]}</span>
+          </div>
+          <div className="pair-quote">
+            <LivePrice
               symbol={asset.symbol}
-              live={asset.price}
-              showAll={showAll}
+              fallback={asset.price}
+              className="big"
             />
-            <div className="chart-foot">
-              <label className="switch">
-                <input
-                  type="checkbox"
-                  checked={showAll}
-                  onChange={(e) => setShowAll(e.target.checked)}
-                />
-                <span>Mostrar gatilhos de estratégias não aprovadas</span>
-              </label>
-              <span className="legend">
-                <i className="dot buy" /> compra <i className="dot sell" />{" "}
-                venda <i className="dot gray" /> não aprovada
-              </span>
-            </div>
-            {asset.reasons.length > 0 && (
-              <p className="notice">{sentence(asset.reasons.join("; "))}</p>
-            )}
-          </section>
-          <aside className="side">
-            <section className="panel">
-              <h2>Expirações</h2>
-              <div className="expiries">
-                {asset.forecasts.map((f) => {
-                  const active =
-                    fresh &&
-                    f.signal &&
-                    f.signal.status === "PENDING" &&
-                    f.signal.expires > now;
-                  const run = state.signals.find(
-                    (x) =>
-                      x.symbol === asset.symbol &&
-                      x.horizon === f.horizon &&
-                      x.status === "FILLED",
-                  );
-                  const label = !fresh
-                    ? "Sem dados"
-                    : run
-                      ? `${run.direction === "COMPRA" ? "Compra" : "Venda"} em andamento`
-                      : active
-                        ? f.state === "COMPRA"
-                          ? "Compra"
-                          : "Venda"
-                        : "Sem entrada";
-                  return (
-                    <div
-                      key={f.horizon}
-                      className={`expiry ${active ? (f.state === "COMPRA" ? "buy" : "sell") : ""}`}
-                    >
-                      <span className="mins">
-                        {f.horizon}
-                        <small>min</small>
-                      </span>
-                      <div>
-                        <strong>
-                          {active &&
-                            (f.state === "COMPRA" ? (
-                              <ArrowUpRight size={16} />
-                            ) : (
-                              <ArrowDownRight size={16} />
-                            ))}
-                          {label}
-                        </strong>
-                        <p>
-                          {run
-                            ? `Termina em ${countdown((run.due ?? now) - now)}`
-                            : active
-                              ? `Acerto medido ${pct(f.probability)}`
-                              : sentence(f.reason)}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-            <section className="panel">
-              <h2>Estratégias deste ativo</h2>
-              {strategies.length ? (
-                <ul className="strats">
-                  {strategies.map((e) => (
-                    <StrategyRow
-                      key={e.id + e.horizon}
-                      e={e}
-                      breakEven={lab!.breakEven}
-                    />
-                  ))}
-                </ul>
-              ) : (
-                <p className="muted">
-                  {sentence(state.strategies?.status) ||
-                    "Carregando o teste das estratégias…"}
-                </p>
-              )}
-            </section>
-            {news.length > 0 && (
-              <section className="panel">
-                <h2>Notícias recentes</h2>
-                {news.map((n) => (
-                  <a
-                    key={n.id}
-                    className="news-mini"
-                    href={n.url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <span className={`sent ${n.classification?.sentiment}`} />
-                    {n.title}
-                  </a>
-                ))}
-              </section>
-            )}
-          </aside>
+            <span className={(ch ?? 0) >= 0 ? "up" : "down"}>
+              {signed(ch)} <small>1h</small>
+            </span>
+          </div>
+          <Expiries state={state} asset={asset} fresh={fresh} now={now} />
         </div>
-      )}
-    </>
+        <CandleChart
+          symbol={asset.symbol}
+          focus={focus}
+          signals={state.signals.filter((s) => s.symbol === asset.symbol)}
+        />
+        {asset.reasons.length > 0 && (
+          <p className="notice">{sentence(asset.reasons.join("; "))}</p>
+        )}
+      </section>
+      <aside className="desk-right">
+        <StrategyPanel
+          evals={evals}
+          lab={lab}
+          focus={focus}
+          onFocus={(e) => setFocusId(`${e.id}|${e.horizon}`)}
+          status={state.strategies?.status}
+        />
+        <section className="map-panel">
+          <header>
+            <h2>Mapa do mercado</h2>
+            <span className="muted">
+              Altura mostra o movimento da última hora
+            </span>
+          </header>
+          <Suspense fallback={<div className="m3d" />}>
+            <Market3D
+              items={state.assets.map((a) => ({
+                symbol: a.symbol,
+                change: a.change,
+              }))}
+              selected={selected}
+              onSelect={onSelect}
+            />
+          </Suspense>
+        </section>
+        {news.length > 0 && (
+          <section className="panel">
+            <h2>Notícias de {ticker(selected)}</h2>
+            {news.map((n) => (
+              <a
+                key={n.id}
+                className="news-mini"
+                href={n.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <span className={`sent ${n.classification?.sentiment}`} />
+                {n.title}
+              </a>
+            ))}
+          </section>
+        )}
+      </aside>
+    </div>
   );
 }
-function StrategyRow({ e, breakEven }: { e: Evaluation; breakEven: number }) {
-  const wr = e.outOfSample.winRate ?? 0;
+function Expiries({
+  state,
+  asset,
+  fresh,
+  now,
+}: {
+  state: State;
+  asset: State["assets"][number];
+  fresh: boolean;
+  now: number;
+}) {
   return (
-    <li className={e.approved ? "ok" : ""}>
-      <div>
-        <strong>{e.label}</strong>
-        <span className="muted">
-          {e.horizon} min · {e.outOfSample.wins + e.outOfSample.losses}{" "}
-          operações no teste
-        </span>
-      </div>
-      <div className="meter" aria-label={`Acerto ${pct(wr)}`}>
-        <span
-          style={{
-            width: `${Math.min(100, Math.max(0, (wr - 0.35) / 0.35) * 100)}%`,
-          }}
-          className={wr > breakEven ? "up" : "down"}
-        />
-        <i style={{ left: `${((breakEven - 0.35) / 0.35) * 100}%` }} />
-      </div>
-      <b className={wr > breakEven ? "up" : "down"}>{pct(wr)}</b>
-    </li>
+    <div className="expiries" aria-label="Expirações">
+      {asset.forecasts.map((f) => {
+        const active =
+          fresh &&
+          f.signal &&
+          f.signal.status === "PENDING" &&
+          f.signal.expires > now;
+        const run = state.signals.find(
+          (x) =>
+            x.symbol === asset.symbol &&
+            x.horizon === f.horizon &&
+            x.status === "FILLED",
+        );
+        const dir = run?.direction ?? (active ? f.state : null),
+          cls = dir === "COMPRA" ? "buy" : dir === "VENDA" ? "sell" : "";
+        return (
+          <div
+            key={f.horizon}
+            className={`expiry ${cls}`}
+            title={sentence(f.reason)}
+          >
+            <span className="mins">{f.horizon} min</span>
+            <strong>
+              {dir === "COMPRA" ? (
+                <ArrowUpRight size={15} />
+              ) : dir === "VENDA" ? (
+                <ArrowDownRight size={15} />
+              ) : null}
+              {!fresh
+                ? "Sem dados"
+                : run
+                  ? countdown((run.due ?? now) - now)
+                  : active
+                    ? dir === "COMPRA"
+                      ? "Compra"
+                      : "Venda"
+                    : "Aguardando"}
+            </strong>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+function StrategyPanel({
+  evals,
+  lab,
+  focus,
+  onFocus,
+  status,
+}: {
+  evals: Evaluation[];
+  lab: Lab | null;
+  focus?: Evaluation;
+  onFocus: (e: Evaluation) => void;
+  status?: string;
+}) {
+  const [h, setH] = useState<number | "all">("all"),
+    [all, setAll] = useState(false);
+  const matching = evals.filter((e) => h === "all" || e.horizon === h),
+    rows = all ? matching : matching.slice(0, 8),
+    approved = evals.filter((e) => e.approved).length,
+    be = lab?.breakEven ?? 0.5556;
+  return (
+    <section className="panel strat-panel">
+      <header className="panel-head">
+        <div>
+          <h2>Estratégias</h2>
+          <span className="muted">
+            {evals.length
+              ? `${approved} aprovada(s) de ${evals.length} testadas neste ativo`
+              : sentence(status) || "Carregando o teste…"}
+          </span>
+        </div>
+        <div className="seg" role="group" aria-label="Expiração">
+          {(["all", 5, 10, 15] as const).map((x) => (
+            <button
+              key={x}
+              aria-pressed={h === x}
+              className={h === x ? "on" : ""}
+              onClick={() => setH(x)}
+            >
+              {x === "all" ? "Todas" : `${x}m`}
+            </button>
+          ))}
+        </div>
+      </header>
+      {focus && (
+        <div className="strat-focus">
+          <strong>{focus.label}</strong>
+          <p>
+            {FAMILY_TEXT[focus.id.split(":")[0]] || ""}{" "}
+            {directionText(focus.id)} Os pontos no gráfico mostram onde ela
+            disparou.
+          </p>
+          <dl>
+            <div>
+              <dt>Acerto no teste</dt>
+              <dd
+                className={
+                  (focus.outOfSample.winRate ?? 0) > be ? "up" : "down"
+                }
+              >
+                {pct(focus.outOfSample.winRate)}
+              </dd>
+            </div>
+            <div>
+              <dt>Mínimo com 95%</dt>
+              <dd>{pct(focus.outOfSample.lower)}</dd>
+            </div>
+            <div>
+              <dt>Operações</dt>
+              <dd>{focus.outOfSample.wins + focus.outOfSample.losses}</dd>
+            </div>
+          </dl>
+          <p className={`verdict ${focus.approved ? "ok" : ""}`}>
+            {focus.approved
+              ? "Aprovada: emite aviso quando disparar."
+              : `Reprovada: ${sentence(focus.reason).toLowerCase() || "não passou do empate"}. Não emite aviso.`}
+          </p>
+        </div>
+      )}
+      <ul className="strats">
+        {rows.map((e) => {
+          const wr = e.outOfSample.winRate ?? 0,
+            on = focus && e.id === focus.id && e.horizon === focus.horizon;
+          return (
+            <li key={e.id + e.horizon}>
+              <button
+                className={`${on ? "on" : ""} ${e.approved ? "ok" : ""}`}
+                aria-pressed={!!on}
+                onClick={() => onFocus(e)}
+              >
+                <span className="s-name">
+                  <b>{e.label}</b>
+                  <small>
+                    {e.horizon} min ·{" "}
+                    {e.outOfSample.wins + e.outOfSample.losses} operações
+                  </small>
+                </span>
+                <span className="meter" aria-hidden="true">
+                  <span
+                    className={wr > be ? "up" : "down"}
+                    style={{
+                      width: `${Math.min(100, Math.max(0, (wr - 0.35) / 0.35) * 100)}%`,
+                    }}
+                  />
+                  <i style={{ left: `${((be - 0.35) / 0.35) * 100}%` }} />
+                </span>
+                <b className={`s-wr ${wr > be ? "up" : "down"}`}>{pct(wr)}</b>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {matching.length > 8 && (
+        <button className="ghost more" onClick={() => setAll(!all)}>
+          {all
+            ? "Mostrar só as 8 melhores"
+            : `Mostrar todas (${matching.length})`}
+        </button>
+      )}
+      {!rows.length && evals.length > 0 && (
+        <p className="muted pad">Nenhuma estratégia nesta expiração.</p>
+      )}
+    </section>
   );
 }
 function LabView({

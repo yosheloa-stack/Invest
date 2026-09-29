@@ -1,5 +1,9 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 // A slowly drifting field of 3D candlesticks: several price paths receding into fog.
 // Purely decorative; pauses when hidden and stays still for reduced-motion users.
 export default function Scene3D({ intensity = 1 }: { intensity?: number }) {
@@ -13,18 +17,18 @@ export default function Scene3D({ intensity = 1 }: { intensity?: number }) {
     } catch {
       return;
     }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     el.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x0e1330, 14, 58);
+    scene.fog = new THREE.Fog(0x0a0f1a, 16, 60);
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 120);
     camera.position.set(0, 7.5, 16);
     camera.lookAt(0, 1, -12);
-    scene.add(new THREE.AmbientLight(0x9aa3ff, 0.55));
-    const key = new THREE.DirectionalLight(0xffffff, 1.3);
+    scene.add(new THREE.AmbientLight(0xaab8ff, 1.1));
+    const key = new THREE.DirectionalLight(0xffffff, 2.2);
     key.position.set(6, 12, 8);
     scene.add(key);
-    const rim = new THREE.PointLight(0xf5b83d, 40, 40);
+    const rim = new THREE.PointLight(0xd9a441, 40, 40);
     rim.position.set(-8, 6, -10);
     scene.add(rim);
     const rows = 7,
@@ -32,16 +36,19 @@ export default function Scene3D({ intensity = 1 }: { intensity?: number }) {
       count = rows * cols;
     const body = new THREE.InstancedMesh(
       new THREE.BoxGeometry(0.42, 1, 0.42),
-      new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.25 }),
+      new THREE.MeshStandardMaterial({
+        roughness: 0.45,
+        metalness: 0.1,
+      }),
       count,
     );
     const wick = new THREE.InstancedMesh(
       new THREE.BoxGeometry(0.06, 1, 0.06),
-      new THREE.MeshBasicMaterial({ color: 0x8c93bf }),
+      new THREE.MeshBasicMaterial({ color: 0x5c6b8a }),
       count,
     );
-    const up = new THREE.Color(0x2bd9a8),
-      down = new THREE.Color(0xff5c7a),
+    const up = new THREE.Color(0x1fd1a0),
+      down = new THREE.Color(0xf2546b),
       m = new THREE.Matrix4(),
       q = new THREE.Quaternion(),
       v = new THREE.Vector3(),
@@ -75,7 +82,7 @@ export default function Scene3D({ intensity = 1 }: { intensity?: number }) {
     const group = new THREE.Group();
     group.add(body, wick);
     scene.add(group);
-    const grid = new THREE.GridHelper(120, 60, 0x283064, 0x1c2350);
+    const grid = new THREE.GridHelper(120, 60, 0x1e2a40, 0x131b2b);
     grid.position.y = -3.2;
     scene.add(grid);
     const place = (offset: number) => {
@@ -99,10 +106,22 @@ export default function Scene3D({ intensity = 1 }: { intensity?: number }) {
       body.instanceMatrix.needsUpdate = true;
       wick.instanceMatrix.needsUpdate = true;
     };
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(
+      new UnrealBloomPass(
+        new THREE.Vector2(256, 256),
+        0.9 * intensity,
+        0.5,
+        0.3,
+      ),
+    );
+    composer.addPass(new OutputPass());
     const resize = () => {
       const w = el.clientWidth || 1,
         h = el.clientHeight || 1;
       renderer.setSize(w, h, false);
+      composer.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
     };
@@ -122,16 +141,17 @@ export default function Scene3D({ intensity = 1 }: { intensity?: number }) {
       place(t * 0.9 * intensity);
       camera.position.x = Math.sin(t * 0.08) * 2.2;
       camera.lookAt(0, 1, -12);
-      renderer.render(scene, camera);
+      composer.render();
     };
     if (still) {
       place(0);
-      renderer.render(scene, camera);
+      composer.render();
     } else frame = requestAnimationFrame(loop);
     return () => {
       cancelAnimationFrame(frame);
       ro.disconnect();
       io.disconnect();
+      composer.dispose();
       renderer.dispose();
       body.geometry.dispose();
       wick.geometry.dispose();
