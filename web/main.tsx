@@ -135,6 +135,36 @@ type State = {
     metrics: { brier: number; ece: number; logLoss: number };
   }[];
   modelErrors: Record<string, string>;
+  strategies?: Lab;
+};
+type Tally = {
+  trades: number;
+  wins: number;
+  losses: number;
+  winRate: number | null;
+  lower: number | null;
+};
+type Lab = {
+  status: string;
+  error: string | null;
+  updatedAt: number | null;
+  historyFrom: number | null;
+  historyTo: number | null;
+  breakEven: number;
+  minTrades: number;
+  tested: number;
+  approved: number;
+  evaluations: {
+    symbol: string;
+    horizon: number;
+    id: string;
+    label: string;
+    inSample: Tally;
+    outOfSample: Tally;
+    halves: [Tally, Tally];
+    approved: boolean;
+    reason: string;
+  }[];
 };
 const money = (n: number | null | undefined) =>
   n == null
@@ -235,6 +265,7 @@ function App() {
     asset =
       state?.assets.find((x) => x.symbol === selected) || state?.assets[0],
     m = state?.metrics,
+    lab = state?.strategies,
     grouped = m
       ? (m as unknown as Record<string, Record<string, Metric>>)[group]
       : {};
@@ -268,6 +299,7 @@ function App() {
             { id: "scanner", label: "Scanner ao vivo", icon: Radio },
             { id: "paper", label: "Paper trading", icon: Layers3 },
             { id: "news", label: "News intelligence", icon: Newspaper },
+            { id: "lab", label: "Estratégias", icon: Target },
             { id: "metrics", label: "Desempenho", icon: BarChart3 },
             { id: "system", label: "Dados e modelos", icon: Database },
           ].map((x) => (
@@ -303,7 +335,9 @@ function App() {
                     ? "News intelligence"
                     : tab === "metrics"
                       ? "Desempenho"
-                      : "Dados e modelos"}
+                      : tab === "lab"
+                        ? "Laboratório de estratégias"
+                        : "Dados e modelos"}
             </span>
           </div>
           <div className="header-status">
@@ -325,7 +359,9 @@ function App() {
                       ? "Contexto além do gráfico."
                       : tab === "metrics"
                         ? "Evidência, antes de confiança."
-                        : "A origem de cada decisão."}
+                        : tab === "lab"
+                          ? "Só opera o que venceu o teste."
+                          : "A origem de cada decisão."}
               </h1>
               <p>
                 {tab === "scanner"
@@ -336,7 +372,9 @@ function App() {
                       ? "Classificação de eventos e reação do mercado com horários auditáveis."
                       : tab === "metrics"
                         ? "Resultados medidos, sem metas artificiais de acerto."
-                        : "Acompanhe fontes, saúde do feed e validação dos modelos."}
+                        : tab === "lab"
+                          ? "Estratégias testadas em histórico real da Binance, com assertividade medida fora da amostra."
+                          : "Acompanhe fontes, saúde do feed e validação dos modelos."}
               </p>
             </div>
             <span className="mode">
@@ -379,10 +417,14 @@ function App() {
               </strong>
             </div>
             <div>
-              <span>Modelos carregados</span>
+              <span>Estratégias aprovadas</span>
               <strong>
-                {state ? state.models.length : "—"}
-                <small>por ativo e horizonte</small>
+                {state?.strategies ? state.strategies.approved : "—"}
+                <small>
+                  {state?.strategies
+                    ? `de ${state.strategies.tested} testadas no histórico`
+                    : "aguardando backtest"}
+                </small>
               </strong>
             </div>
           </div>
@@ -500,7 +542,9 @@ function App() {
                       <Target size={18} />
                       Horizontes de decisão
                     </h2>
-                    <span>Modelos independentes · validade de 30 segundos</span>
+                    <span>
+                      Estratégias validadas e modelos · validade de 30 segundos
+                    </span>
                   </div>
                   <div className="forecasts">
                     {asset.forecasts.map((f) => {
@@ -542,21 +586,18 @@ function App() {
                             {label}
                           </h3>
                           <div className="probability">
-                            <span>Probabilidade calibrada</span>
+                            <span>
+                              {f.reason.startsWith("ESTRATÉGIA")
+                                ? "Acerto medido no backtest"
+                                : "Probabilidade calibrada"}
+                            </span>
                             <strong>
                               {fresh && f.probability !== null
                                 ? percent(f.probability)
                                 : "—"}
                             </strong>
                           </div>
-                          <p className="reason">
-                            {f.probability === null
-                              ? "DADOS INSUFICIENTES PARA CONFIANÇA CALIBRADA"
-                              : f.reason}
-                          </p>
-                          {f.probability === null && (
-                            <p className="muted small">{f.reason}</p>
-                          )}
+                          <p className="reason">{f.reason}</p>
                           {f.signal && (
                             <div className="entry">
                               <span>Faixa da última previsão</span>
@@ -784,6 +825,96 @@ function App() {
                 />
               )}
             </section>
+          )}
+          {tab === "lab" && (
+            <>
+              <div className="overview">
+                <div>
+                  <span>Situação</span>
+                  <strong>
+                    <small>{lab?.status || "AGUARDANDO BACKEND"}</small>
+                  </strong>
+                </div>
+                <div>
+                  <span>Histórico testado</span>
+                  <strong>
+                    <small>
+                      {lab?.historyFrom
+                        ? `${new Date(lab.historyFrom).toLocaleDateString("pt-BR")} – ${new Date(lab.historyTo!).toLocaleDateString("pt-BR")}`
+                        : "—"}
+                    </small>
+                  </strong>
+                </div>
+                <div>
+                  <span>Aprovadas / testadas</span>
+                  <strong>
+                    {lab ? `${lab.approved} / ${lab.tested}` : "—"}
+                  </strong>
+                </div>
+                <div>
+                  <span>Break-even (payout)</span>
+                  <strong>{percent(lab?.breakEven)}</strong>
+                </div>
+              </div>
+              <div className="banner">
+                Cada família de estratégia tem os parâmetros escolhidos nos
+                primeiros 60% do histórico e é julgada uma única vez nos 40%
+                finais, que ela nunca viu. Só é aprovada com pelo menos{" "}
+                {lab?.minTrades ?? 100} operações fora da amostra, limite
+                inferior de confiança de 95% acima do break-even e as duas
+                metades do teste acima do break-even. Resultado passado não
+                garante resultado futuro.
+              </div>
+              {lab?.error && <p className="down">{lab.error}</p>}
+              <section className="panel">
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Ativo</th>
+                        <th>Horizonte</th>
+                        <th>Estratégia</th>
+                        <th>Operações (teste)</th>
+                        <th>Acerto (teste)</th>
+                        <th>Mínimo com 95% de confiança</th>
+                        <th>Acerto (seleção)</th>
+                        <th>Veredito</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(lab?.evaluations || []).map((e) => (
+                        <tr key={`${e.symbol}:${e.horizon}:${e.id}`}>
+                          <td>{e.symbol.replace("USDT", "")}</td>
+                          <td>{e.horizon} min</td>
+                          <td>{e.label}</td>
+                          <td>{e.outOfSample.wins + e.outOfSample.losses}</td>
+                          <td
+                            className={
+                              (e.outOfSample.winRate ?? 0) > lab!.breakEven
+                                ? "up"
+                                : "down"
+                            }
+                          >
+                            {percent(e.outOfSample.winRate)}
+                          </td>
+                          <td>{percent(e.outOfSample.lower)}</td>
+                          <td>{percent(e.inSample.winRate)}</td>
+                          <td className={e.approved ? "up" : "muted"}>
+                            {e.reason}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {!lab?.evaluations.length && (
+                  <Empty
+                    title="Backtest em andamento"
+                    text="O servidor baixa o histórico real de 1 minuto da Binance e testa todas as estratégias. Isso leva poucos minutos após iniciar."
+                  />
+                )}
+              </section>
+            </>
           )}
           {tab === "metrics" && (
             <>

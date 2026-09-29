@@ -17,7 +17,8 @@
     "format:check": "prettier --check src web scripts tests",
     "start:local": "node --env-file=.env dist/server.js",
     "backup": "node --env-file-if-exists=.env scripts/backup.mjs",
-    "restore": "node --env-file-if-exists=.env scripts/restore.mjs"
+    "restore": "node --env-file-if-exists=.env scripts/restore.mjs",
+    "lab": "node --import tsx scripts/lab.ts"
   },
   "dependencies": {
     "express": "5.1.0",

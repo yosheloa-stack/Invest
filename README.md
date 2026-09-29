@@ -70,6 +70,18 @@ O primeiro relatório mede somente previsões; não finge ser execução. O segu
 5. Após revisão, copie **somente os nove arquivos de modelo `ATIVO-HORIZONTE.json`** desejados de `research/candidates` para `models/`. Não copie `report.json`. O backend recarrega a cada minuto. Cada modelo cobre apenas seu par/horizonte. Modelos são rejeitados após 14 dias desde o fim do teste por padrão. Nenhum modelo é promovido automaticamente nem enviado pronto.
 6. Compare resultados posteriores do paper com o teste/replay. Mudar pesos, threshold, cutoff ou estratégia depois de ver o teste invalida a independência desse teste: reserve um novo período futuro. Nunca reporte o mesmo teste reutilizado como evidência nova.
 
+## Laboratório de estratégias (funciona sem modelo treinado)
+
+Ao iniciar, o servidor baixa os últimos `STRATEGY_DAYS` (padrão 30) dias de candles reais de 1 minuto da Binance para cada ativo e testa 62 variações de 9 famílias de estratégias (RSI, Bollinger, impulso, sequência de candles, pullback na EMA21, distância da VWAP, fluxo agressor, candle de exaustão e RSI+Bollinger), cada uma nos sentidos seguir e reverter, para 5, 10 e 15 minutos.
+
+- Os parâmetros de cada família são escolhidos só nos primeiros 60% do histórico. A família é julgada uma única vez nos 40% finais, que ela nunca viu.
+- O backtest respeita as mesmas regras do paper: entrada no fechamento do candle, saída h minutos depois, uma posição por ativo/horizonte e cooldown. Acerto = movimento a favor (regra de opção binária).
+- Aprovação exige pelo menos `STRATEGY_MIN_TRADES` (padrão 100) operações fora da amostra, limite inferior de confiança (Wilson, `STRATEGY_Z` = 1,96) acima do break-even de 55,56% e as duas metades do teste acima do break-even. Em 30 passeios aleatórios de teste, nenhuma estratégia foi aprovada por acaso (720 testes).
+- Só estratégias aprovadas emitem sinais paper, com o acerto medido fora da amostra no lugar da probabilidade. Sinais contraditórios se cancelam. A validação é refeita a cada `STRATEGY_REFRESH_HOURS` (padrão 6) com dados novos, então estratégias que perdem a vantagem são desligadas.
+- Painel: aba **Estratégias**. API: `/api/strategies`. Fora do servidor: `npm run lab -- research/strategy-report.json`.
+
+Se nenhuma estratégia passar, o sistema não inventa sinais: o painel mostra o acerto medido de cada uma e por que foi reprovada.
+
 ## Notícias e IA
 
 Configure `NEWS_URL` com feed JSON no contrato de [docs/API.md](docs/API.md), além de `LLM_BASE_URL`, `LLM_API_KEY` e `LLM_MODEL`. A base deve aceitar `/chat/completions` e JSON object response format. Provedores incompatíveis precisam de adaptação explícita. Não há fonte gratuita inventada ou scraping oculto.

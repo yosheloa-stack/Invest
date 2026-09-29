@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { config, weights } from "./config.js";
 import type { Decision, Features, Signal, Quote } from "./types.js";
 import { predict, type ModelRegistry } from "./models.js";
+import type { StrategyPick } from "./lab.js";
 export function evaluate(
   f: Features,
   registry: ModelRegistry,
@@ -167,3 +168,53 @@ export interface AlertAdapter {
   send(signal: Signal, idempotencyKey: string): Promise<void>;
 }
 // External alert adapters must be explicitly configured; no outbound message is sent by this application.
+// Builds a paper signal from a strategy approved by the out-of-sample backtest.
+// "probability" here is the measured out-of-sample win rate, not a model output.
+export function strategyDecision(
+  f: Features,
+  pick: StrategyPick,
+  price: number,
+  now: number,
+): Decision {
+  const e = pick.evaluation,
+    wr = e.outOfSample.winRate ?? 0,
+    label = `${e.label} — acerto fora da amostra ${(wr * 100).toFixed(1)}% em ${e.outOfSample.wins + e.outOfSample.losses} operações`;
+  const base: Decision = {
+    horizon: f.horizon,
+    state: "SEM ENTRADA",
+    reason: label,
+    probability: wr,
+    score: e.outOfSample.lower ?? 0,
+    favorable: [e.label],
+    contrary: [],
+  };
+  if (Number(f.details.spreadBps) > 10)
+    return { ...base, reason: "SPREAD ELEVADO" };
+  if (Number(f.details.atrPct) > 0.02 || Number(f.details.atrPct) < 0.00005)
+    return { ...base, reason: "VOLATILIDADE ANORMAL" };
+  const tolerance = f.indicators.atr * 0.15;
+  const signal: Signal = {
+    id: randomUUID(),
+    symbol: f.symbol,
+    t: now,
+    horizon: f.horizon,
+    direction: pick.direction,
+    analyzedPrice: price,
+    entryLow: price - tolerance,
+    entryHigh: price + tolerance,
+    expires: now + 30000,
+    probability: wr,
+    modelId: `estrategia:${e.id}`,
+    features: f,
+    score: e.outOfSample.lower ?? 0,
+    favorable: [e.label],
+    contrary: [],
+    status: "PENDING",
+  };
+  return {
+    ...base,
+    state: pick.direction,
+    reason: `ESTRATÉGIA VALIDADA: ${label}`,
+    signal,
+  };
+}

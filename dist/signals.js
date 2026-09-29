@@ -135,3 +135,46 @@ export function advanceSignal(s, quote, now, healthy) {
     return next;
 }
 // External alert adapters must be explicitly configured; no outbound message is sent by this application.
+// Builds a paper signal from a strategy approved by the out-of-sample backtest.
+// "probability" here is the measured out-of-sample win rate, not a model output.
+export function strategyDecision(f, pick, price, now) {
+    const e = pick.evaluation, wr = e.outOfSample.winRate ?? 0, label = `${e.label} — acerto fora da amostra ${(wr * 100).toFixed(1)}% em ${e.outOfSample.wins + e.outOfSample.losses} operações`;
+    const base = {
+        horizon: f.horizon,
+        state: "SEM ENTRADA",
+        reason: label,
+        probability: wr,
+        score: e.outOfSample.lower ?? 0,
+        favorable: [e.label],
+        contrary: [],
+    };
+    if (Number(f.details.spreadBps) > 10)
+        return { ...base, reason: "SPREAD ELEVADO" };
+    if (Number(f.details.atrPct) > 0.02 || Number(f.details.atrPct) < 0.00005)
+        return { ...base, reason: "VOLATILIDADE ANORMAL" };
+    const tolerance = f.indicators.atr * 0.15;
+    const signal = {
+        id: randomUUID(),
+        symbol: f.symbol,
+        t: now,
+        horizon: f.horizon,
+        direction: pick.direction,
+        analyzedPrice: price,
+        entryLow: price - tolerance,
+        entryHigh: price + tolerance,
+        expires: now + 30000,
+        probability: wr,
+        modelId: `estrategia:${e.id}`,
+        features: f,
+        score: e.outOfSample.lower ?? 0,
+        favorable: [e.label],
+        contrary: [],
+        status: "PENDING",
+    };
+    return {
+        ...base,
+        state: pick.direction,
+        reason: `ESTRATÉGIA VALIDADA: ${label}`,
+        signal,
+    };
+}

@@ -13,10 +13,11 @@ import { Store } from "./store.js";
 import { NewsIntelligenceEngine } from "./news.js";
 import { ModelRegistry } from "./models.js";
 import { buildFeatures } from "./features.js";
-import { evaluate, advanceSignal } from "./signals.js";
+import { evaluate, advanceSignal, strategyDecision } from "./signals.js";
+import { StrategyLab } from "./lab.js";
 import { HORIZONS, } from "./types.js";
 import { technical } from "./indicators.js";
-const store = new Store(), market = new MarketData(), news = new NewsIntelligenceEngine(store), models = new ModelRegistry();
+const store = new Store(), market = new MarketData(), news = new NewsIntelligenceEngine(store), models = new ModelRegistry(), lab = new StrategyLab(market.rest);
 const app = express();
 app.disable("x-powered-by");
 app.use((_req, res, next) => {
@@ -27,11 +28,26 @@ app.use((_req, res, next) => {
 const auth = dashboardAuth(config.DASHBOARD_USER, config.DASHBOARD_PASSWORD, config.PUBLIC_ORIGIN);
 app.get("/healthz", (_req, res) => res.json({ status: "alive" }));
 app.use(auth.middleware);
-const server = createServer(app), wss = new WebSocketServer({ server, path: "/ws", maxPayload: 1024,
-    verifyClient: ({ req }) => auth.authorized(req) && auth.originAllowed(req)
+const server = createServer(app), wss = new WebSocketServer({
+    server,
+    path: "/ws",
+    maxPayload: 1024,
+    verifyClient: ({ req }) => auth.authorized(req) && auth.originAllowed(req),
 });
 let initialized = false, busy = false, stopping = false, lastBucket = -1, stats = null, newsList = [], newsCategories = [], recent = [], dbError = null;
-const features = new Map(), decisions = new Map(), active = new Map(), cooldowns = new Map();
+const features = new Map(), decisions = new Map(), active = new Map(), cooldowns = new Map(), strategyCandle = new Map();
+function labReason(symbol, h) {
+    if (!lab.evaluations.length)
+        return `LABORATÓRIO DE ESTRATÉGIAS: ${lab.status}`;
+    const ok = lab.approved(symbol, h);
+    return ok.length
+        ? `AGUARDANDO GATILHO: ${ok.map((x) => x.label).join(" | ")}`
+        : "NENHUMA ESTRATÉGIA APROVADA NO BACKTEST PARA ESTE ATIVO/HORIZONTE";
+}
+function blocked(symbol, h, now) {
+    return (now - (cooldowns.get(`${symbol}:${h}`) || 0) < config.COOLDOWN_MS ||
+        [...active.values()].some((x) => x.symbol === symbol && x.horizon === h));
+}
 let candleQueue = Promise.resolve();
 market.on("candles", (symbol, tf, cs) => {
     candleQueue = candleQueue
@@ -57,6 +73,7 @@ function view() {
         newsLastSuccess: news.lastSuccess,
         models: models.summary(),
         modelErrors: models.errors,
+        strategies: lab.summary(),
         metrics: stats,
         news: newsList,
         newsCategories,
@@ -134,7 +151,11 @@ app.get("/api/health", (_req, res) => {
 let backupBusy = false;
 app.get("/api/backup", async (_req, res) => {
     if (backupBusy || !initialized || !store.healthy) {
-        res.status(503).json({ error: "Backup indisponível; aguarde inicialização ou backup em andamento" });
+        res
+            .status(503)
+            .json({
+            error: "Backup indisponível; aguarde inicialização ou backup em andamento",
+        });
         return;
     }
     backupBusy = true;
@@ -172,6 +193,7 @@ app.get("/api/news", (_req, res) => res.json({
     events: newsList,
     categories: newsCategories,
 }));
+app.get("/api/strategies", (_req, res) => res.json(lab.summary()));
 app.get("/api/models", (_req, res) => res.json({ models: models.summary(), errors: models.errors }));
 app.use(express.static("public"));
 app.get("/", (_req, res) => res.sendFile("index.html", { root: "public" }));
@@ -207,6 +229,7 @@ async function initialize() {
     for (const s of recent)
         cooldowns.set(`${s.symbol}:${s.horizon}`, Math.max(cooldowns.get(`${s.symbol}:${s.horizon}`) || 0, s.t));
     await market.start();
+    lab.start();
     initialized = true;
     stats = await store.stats();
 }
@@ -271,6 +294,8 @@ async function tick() {
                     features.set(key, f);
                     await store.observation(f);
                     let d = evaluate(f, models, news.ready(), config.SNIPER);
+                    if (!models.models.has(key))
+                        d = { ...d, state: "SEM ENTRADA", reason: labReason(s.symbol, h) };
                     if (d.signal) {
                         const live = market.states.get(s.symbol);
                         if (market.reasons(live).length ||
@@ -304,6 +329,37 @@ async function tick() {
                 decisions.set(s.symbol, ds);
             }
             stats = await store.stats();
+        }
+        // Strategy triggers run as soon as a 1m candle closes, independent of the minute bucket.
+        const newsOk = !(config.NEWS_REQUIRED || config.SNIPER) || news.ready();
+        for (const s of cycle) {
+            if (!lab.evaluations.length ||
+                !newsOk ||
+                market.reasons(s).length ||
+                !store.healthy)
+                continue;
+            const closed = s.candles["1m"].filter((c) => c.end < now), cl = closed[closed.length - 1];
+            if (!cl ||
+                cl.t <= (strategyCandle.get(s.symbol) || 0) ||
+                now - cl.end > 15000)
+                continue;
+            strategyCandle.set(s.symbol, cl.t);
+            for (const h of HORIZONS) {
+                const f = features.get(`${s.symbol}:${h}`), pick = lab.decide(s.symbol, h, closed);
+                if (!f || !pick || blocked(s.symbol, h, now))
+                    continue;
+                const d = strategyDecision(f, pick, s.trade.p, now);
+                if (!d.signal)
+                    continue;
+                await store.saveSignal(d.signal, true);
+                active.set(d.signal.id, d.signal);
+                recent = [d.signal, ...recent].slice(0, 500);
+                cooldowns.set(`${s.symbol}:${h}`, now);
+                decisions.set(s.symbol, [
+                    ...(decisions.get(s.symbol) || []).filter((x) => x.horizon !== h),
+                    d,
+                ]);
+            }
         }
         broadcast();
     }
@@ -352,6 +408,7 @@ async function shutdown() {
     clearInterval(timer);
     clearInterval(newsTimer);
     market.stop();
+    lab.stop();
     news.stop();
     for (const ws of wss.clients)
         ws.close(1001, "shutdown");
