@@ -1,8 +1,3 @@
-import "@fontsource/ibm-plex-sans/400.css";
-import "@fontsource/ibm-plex-sans/500.css";
-import "@fontsource/ibm-plex-sans/600.css";
-import "@fontsource/ibm-plex-sans-condensed/500.css";
-import "@fontsource/ibm-plex-sans-condensed/600.css";
 import "./style.css";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -11,6 +6,8 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   BarChart3,
+  Box,
+  ChevronDown,
   CandlestickChart,
   Download,
   ExternalLink,
@@ -187,9 +184,10 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
             key={t.id}
             className={tab === t.id ? "on" : ""}
             aria-current={tab === t.id ? "page" : undefined}
+            title={t.label}
             onClick={() => setTab(t.id)}
           >
-            <t.icon size={19} strokeWidth={1.8} />
+            <t.icon size={20} strokeWidth={1.7} />
             <span>{t.label}</span>
           </button>
         ))}
@@ -314,6 +312,70 @@ function TickerTape({
     </div>
   );
 }
+type SideTab = "strat" | "map" | "news";
+const LOGO: Record<string, string> = {
+  BTCUSDT: "#f7931a",
+  ETHUSDT: "#627eea",
+  SOLUSDT: "#9945ff",
+  BNBUSDT: "#f3ba2f",
+  XRPUSDT: "#23292f",
+  DOGEUSDT: "#c2a633",
+  ADAUSDT: "#0033ad",
+  AVAXUSDT: "#e84142",
+  LTCUSDT: "#345d9d",
+  LINKUSDT: "#2a5ada",
+  EURUSDT: "#1a4fa0",
+};
+const Logo = ({ symbol, small }: { symbol: string; small?: boolean }) => (
+  <i
+    className={`tv-logo ${small ? "small" : ""}`}
+    style={{ background: LOGO[symbol] || "#787b86" }}
+  >
+    {symbol === "EURUSDT" ? "€" : ticker(symbol).slice(0, 1)}
+  </i>
+);
+function SymbolPicker({
+  state,
+  selected,
+  onSelect,
+}: {
+  state: State;
+  selected: string;
+  onSelect: (s: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="tv-menu-wrap">
+      <button
+        className="tv-symbol"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <Logo symbol={selected} />
+        {pair(selected).replace("/", "")}
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div className="tv-menu tv-symbols" role="menu">
+          {state.assets.map((a) => (
+            <button
+              key={a.symbol}
+              role="menuitem"
+              className={a.symbol === selected ? "on" : ""}
+              onClick={() => {
+                onSelect(a.symbol);
+                setOpen(false);
+              }}
+            >
+              <b>{pair(a.symbol).replace("/", "")}</b>
+              <span>{COIN_NAMES[a.symbol]}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 function Watchlist({
   state,
   selected,
@@ -325,30 +387,35 @@ function Watchlist({
 }) {
   useTicks();
   return (
-    <div className="watch" role="tablist" aria-label="Ativos">
-      {state.assets.map((a) => {
-        const ch = liveChange(a);
-        return (
-          <button
-            key={a.symbol}
-            role="tab"
-            aria-selected={a.symbol === selected}
-            className={a.symbol === selected ? "on" : ""}
-            onClick={() => onSelect(a.symbol)}
-          >
-            <span className="w-name">
-              <b>{ticker(a.symbol)}</b>
-              <small>{COIN_NAMES[a.symbol] || a.symbol}</small>
-            </span>
-            <span className="w-num">
+    <div className="tv-watch">
+      <div className="tv-watch-head">
+        <span>Símbolo</span>
+        <span>Último</span>
+        <span>Var. 1h</span>
+      </div>
+      <div role="tablist" aria-label="Ativos" className="tv-watch-rows">
+        {state.assets.map((a) => {
+          const ch = liveChange(a);
+          return (
+            <button
+              key={a.symbol}
+              role="tab"
+              aria-selected={a.symbol === selected}
+              className={a.symbol === selected ? "on" : ""}
+              onClick={() => onSelect(a.symbol)}
+            >
+              <span className="w-sym">
+                <Logo symbol={a.symbol} small />
+                {ticker(a.symbol)}
+              </span>
               <LivePrice symbol={a.symbol} fallback={a.price} />
-              <small className={(ch ?? 0) >= 0 ? "up" : "down"}>
+              <span className={(ch ?? 0) >= 0 ? "up" : "down"}>
                 {signed(ch)}
-              </small>
-            </span>
-          </button>
-        );
-      })}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -368,7 +435,8 @@ function TradeView({
   now: number;
 }) {
   useTicks();
-  const [focusId, setFocusId] = useState<string | null>(null);
+  const [focusId, setFocusId] = useState<string | null>(null),
+    [side, setSide] = useState<SideTab>("strat");
   const evals = useMemo(
     () =>
       (lab?.evaluations || [])
@@ -398,83 +466,120 @@ function TradeView({
       .filter((n) =>
         n.classification?.assets.some((x) => ticker(selected).startsWith(x)),
       )
-      .slice(0, 3);
+      .slice(0, 6);
+  const SIDE: { id: SideTab; label: string; icon: typeof Activity }[] = [
+    { id: "strat", label: "Estratégias", icon: FlaskConical },
+    { id: "map", label: "Mapa 3D", icon: Box },
+    { id: "news", label: "Notícias", icon: Newspaper },
+  ];
   return (
-    <div className="desk">
-      <aside className="desk-left">
-        <h2 className="sr">Ativos</h2>
-        <Watchlist state={state} selected={selected} onSelect={onSelect} />
-      </aside>
-      <section className="desk-main">
-        <div className="pair-head">
-          <div className="pair-id">
-            <h1>{pair(asset.symbol)}</h1>
-            <span className="muted">{COIN_NAMES[asset.symbol]}</span>
-          </div>
-          <div className="pair-quote">
-            <LivePrice
-              symbol={asset.symbol}
-              fallback={asset.price}
-              className="big"
-            />
-            <span className={(ch ?? 0) >= 0 ? "up" : "down"}>
-              {signed(ch)} <small>1h</small>
-            </span>
-          </div>
-          <Expiries state={state} asset={asset} fresh={fresh} now={now} />
-        </div>
+    <div className="tv">
+      <section className="tv-center">
         <CandleChart
           symbol={asset.symbol}
+          title={pair(asset.symbol).replace("/", "")}
           focus={focus}
           signals={state.signals.filter((s) => s.symbol === asset.symbol)}
+          head={
+            <SymbolPicker
+              state={state}
+              selected={selected}
+              onSelect={onSelect}
+            />
+          }
         />
         {asset.reasons.length > 0 && (
           <p className="notice">{sentence(asset.reasons.join("; "))}</p>
         )}
       </section>
-      <aside className="desk-right">
-        <StrategyPanel
-          evals={evals}
-          lab={lab}
-          focus={focus}
-          onFocus={(e) => setFocusId(`${e.id}|${e.horizon}`)}
-          status={state.strategies?.status}
-        />
-        <section className="map-panel">
-          <header>
-            <h2>Mapa do mercado</h2>
-            <span className="muted">
-              Altura mostra o movimento da última hora
-            </span>
-          </header>
-          <Suspense fallback={<div className="m3d" />}>
-            <Market3D
-              items={state.assets.map((a) => ({
-                symbol: a.symbol,
-                change: a.change,
-              }))}
-              selected={selected}
-              onSelect={onSelect}
-            />
-          </Suspense>
-        </section>
-        {news.length > 0 && (
-          <section className="panel">
-            <h2>Notícias de {ticker(selected)}</h2>
-            {news.map((n) => (
-              <a
-                key={n.id}
-                className="news-mini"
-                href={n.url}
-                target="_blank"
-                rel="noreferrer"
+      <aside className="tv-side">
+        <Watchlist state={state} selected={selected} onSelect={onSelect} />
+        <div className="tv-details">
+          <div className="tv-quote">
+            <div>
+              <b>{pair(asset.symbol).replace("/", "")}</b>
+              <span className="muted">{COIN_NAMES[asset.symbol]}</span>
+            </div>
+            <div className="tv-quote-num">
+              <LivePrice
+                symbol={asset.symbol}
+                fallback={asset.price}
+                className="big"
+              />
+              <span className={(ch ?? 0) >= 0 ? "up" : "down"}>
+                {signed(ch)}
+              </span>
+            </div>
+          </div>
+          <Expiries state={state} asset={asset} fresh={fresh} now={now} />
+          <div className="tv-tabs" role="tablist">
+            {SIDE.map((t) => (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={side === t.id}
+                className={side === t.id ? "on" : ""}
+                onClick={() => setSide(t.id)}
               >
-                <span className={`sent ${n.classification?.sentiment}`} />
-                {n.title}
-              </a>
+                <t.icon size={15} /> {t.label}
+              </button>
             ))}
-          </section>
-        )}
+          </div>
+          {side === "strat" && (
+            <StrategyPanel
+              evals={evals}
+              lab={lab}
+              focus={focus}
+              onFocus={(e) => setFocusId(`${e.id}|${e.horizon}`)}
+              status={state.strategies?.status}
+            />
+          )}
+          {side === "map" && (
+            <section className="map-panel">
+              <span className="muted">
+                Cada coluna é um ativo; a altura é o movimento da última hora.
+                Clique para abrir.
+              </span>
+              <Suspense fallback={<div className="m3d" />}>
+                <Market3D
+                  items={state.assets.map((a) => ({
+                    symbol: a.symbol,
+                    change: a.change,
+                  }))}
+                  selected={selected}
+                  onSelect={onSelect}
+                />
+              </Suspense>
+            </section>
+          )}
+          {side === "news" && (
+            <section className="tv-news">
+              {news.length ? (
+                news.map((n) => (
+                  <a
+                    key={n.id}
+                    className="news-mini"
+                    href={n.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <span className={`sent ${n.classification?.sentiment}`} />
+                    <span>
+                      {n.title}
+                      <small>
+                        {n.source} · {clock(n.publishedAt)}
+                      </small>
+                    </span>
+                  </a>
+                ))
+              ) : (
+                <p className="muted pad">
+                  Nenhuma notícia recente sobre {ticker(selected)}.
+                </p>
+              )}
+            </section>
+          )}
+        </div>
       </aside>
     </div>
   );

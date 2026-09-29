@@ -38,25 +38,25 @@ export default function Market3D({
     el.appendChild(renderer.domElement);
     const scene = new THREE.Scene(),
       camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
-    scene.fog = new THREE.Fog(0x0a0f1a, 18, 40);
+    scene.fog = new THREE.Fog(0x131722, 18, 40);
     scene.add(new THREE.AmbientLight(0x8fa3c8, 0.5));
     const keyLight = new THREE.DirectionalLight(0xffffff, 1.6);
     keyLight.position.set(5, 12, 7);
     scene.add(keyLight);
     const n = data.current.items.length,
       radius = Math.max(4.2, n * 0.52),
-      up = new THREE.Color(0x1fd1a0),
-      down = new THREE.Color(0xf2546b),
-      flat = new THREE.Color(0x7d8aa6),
-      brass = new THREE.Color(0xd9a441);
+      up = new THREE.Color(0x089981),
+      down = new THREE.Color(0xf23645),
+      flat = new THREE.Color(0x787b86),
+      brass = new THREE.Color(0x2962ff);
     // Floor: a faint polar grid, like a radar dish the columns stand on.
     const floor = new THREE.PolarGridHelper(
       radius + 2.2,
       24,
       6,
       96,
-      0x1e2a40,
-      0x162033,
+      0x2a2e39,
+      0x1e222d,
     );
     floor.position.y = 0;
     scene.add(floor);

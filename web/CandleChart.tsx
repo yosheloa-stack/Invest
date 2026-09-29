@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   CandlestickSeries,
   ColorType,
@@ -8,6 +8,7 @@ import {
   LineStyle,
   createChart,
   createSeriesMarkers,
+  createTextWatermark,
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
@@ -18,6 +19,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
+import { Check, ChevronDown, LineChart } from "lucide-react";
 import { api, countdown, pct, price } from "./format";
 import { liveBar, subscribe, lastServerTime } from "./live";
 import {
@@ -30,17 +32,49 @@ import {
   type Study,
 } from "./studies";
 import type { CandleData, Evaluation, Signal } from "./types";
-const UP = "#1FD1A0",
-  DOWN = "#F2546B",
-  BRASS = "#D9A441",
-  GRID = "rgba(120,140,180,.08)",
-  AXIS = "#7D8AA6";
+// TradingView dark palette.
+export const TV = {
+  up: "#089981",
+  down: "#F23645",
+  blue: "#2962FF",
+  text: "#D1D4DC",
+  muted: "#787B86",
+  grid: "rgba(42,46,57,.6)",
+  line: "#2A2E39",
+  orange: "#FF9800",
+  purple: "#9C27B0",
+  ema9: "#2962FF",
+  ema21: "#FF9800",
+  ema50: "#E040FB",
+  bb: "#2196F3",
+  rsi: "#7E57C2",
+};
+const FRAMES = [1, 5, 15] as const;
+export type Frame = (typeof FRAMES)[number];
 const sec = (t: number) => Math.floor(t / 1000) as UTCTimestamp;
 const hhmm = (t: number) =>
   new Date(t * 1000).toLocaleTimeString("pt-BR", {
     hour: "2-digit",
     minute: "2-digit",
   });
+// Groups 1-minute bars into 5 or 15-minute candles.
+function aggregate(bars: Bar[], tf: number): Bar[] {
+  if (tf === 1) return bars;
+  const size = tf * 60000,
+    out: Bar[] = [];
+  for (const b of bars) {
+    const t = Math.floor(b.t / size) * size,
+      last = out[out.length - 1];
+    if (last && last.t === t) {
+      last.h = Math.max(last.h, b.h);
+      last.l = Math.min(last.l, b.l);
+      last.c = b.c;
+      last.v += b.v;
+      last.buy += b.buy;
+    } else out.push({ ...b, t });
+  }
+  return out;
+}
 type Lines = {
   ema9: ISeriesApi<"Line">;
   ema21: ISeriesApi<"Line">;
@@ -53,21 +87,34 @@ type Lines = {
 };
 type Legend = {
   bar: Bar;
+  prev: number;
   rsi: number;
   ema9: number;
   ema21: number;
   ema50: number;
+  bbUp: number;
+  bbMid: number;
+  bbDn: number;
   vwap: number;
 };
-// Live 1-minute candles with the indicators the strategies read and the selected strategy's triggers.
+const volColor = (b: Bar) =>
+  b.c >= b.o ? "rgba(8,153,129,.5)" : "rgba(242,54,69,.5)";
+const n2 = (x: number) =>
+  Number.isFinite(x) ? x.toFixed(2).replace(".", ",") : "—";
+// TradingView-style live chart: 1/5/15-minute candles, the indicators the strategies read,
+// and the selected strategy's triggers.
 export default function CandleChart({
   symbol,
+  title,
   focus,
   signals,
+  head,
 }: {
   symbol: string;
+  title: string;
   focus?: Evaluation;
   signals: Signal[];
+  head?: ReactNode;
 }) {
   const host = useRef<HTMLDivElement>(null),
     chart = useRef<IChartApi | undefined>(undefined),
@@ -76,18 +123,28 @@ export default function CandleChart({
     rsi = useRef<ISeriesApi<"Line"> | undefined>(undefined),
     rsiLevels = useRef<IPriceLine[]>([]),
     markers = useRef<ISeriesMarkersPluginApi<Time> | undefined>(undefined),
+    mark = useRef<{ applyOptions: (o: object) => void } | undefined>(undefined),
     hist = useRef<Bar[]>([]),
+    view = useRef<Bar[]>([]),
     shown = useRef<number | null>(null),
     anim = useRef(0);
-  const [data, setData] = useState<CandleData | null>(null),
+  const [tf, setTf] = useState<Frame>(() => {
+      try {
+        const v = Number(localStorage.getItem("yosh-tf"));
+        return (FRAMES as readonly number[]).includes(v) ? (v as Frame) : 1;
+      } catch {
+        return 1;
+      }
+    }),
+    [data, setData] = useState<CandleData | null>(null),
     [error, setError] = useState<string | null>(null),
     [legend, setLegend] = useState<Legend | null>(null),
     [hover, setHover] = useState(false),
     [left, setLeft] = useState("--:--"),
+    [menu, setMenu] = useState(false),
     [studies, setStudies] = useState<Set<Study>>(() => new Set(["ema", "vol"])),
     [minute, setMinute] = useState(0);
   const p = useMemo(() => params(focus?.id), [focus?.id]);
-  // Selecting a strategy switches on the indicators it reads.
   useEffect(() => {
     const need = studiesFor(focus?.id);
     if (need.length)
@@ -98,33 +155,49 @@ export default function CandleChart({
       });
   }, [focus?.id]);
   useEffect(() => {
+    try {
+      localStorage.setItem("yosh-tf", String(tf));
+    } catch {
+      /* private mode */
+    }
+  }, [tf]);
+  useEffect(() => {
     const el = host.current!;
     const c = createChart(el, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: "transparent" },
-        textColor: AXIS,
-        fontFamily: "IBM Plex Sans, system-ui, sans-serif",
+        background: { type: ColorType.Solid, color: "#131722" },
+        textColor: TV.muted,
+        fontFamily:
+          "-apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif",
         fontSize: 11,
         attributionLogo: false,
-        panes: { separatorColor: "#1E2A40", enableResize: false },
+        panes: { separatorColor: TV.line, enableResize: true },
       },
-      grid: { vertLines: { color: GRID }, horzLines: { color: GRID } },
+      grid: { vertLines: { color: TV.grid }, horzLines: { color: TV.grid } },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: "#3A4A6B", labelBackgroundColor: "#1E2A40" },
-        horzLine: { color: "#3A4A6B", labelBackgroundColor: "#1E2A40" },
+        vertLine: {
+          color: "#758696",
+          style: LineStyle.Dashed,
+          labelBackgroundColor: "#363A45",
+        },
+        horzLine: {
+          color: "#758696",
+          style: LineStyle.Dashed,
+          labelBackgroundColor: "#363A45",
+        },
       },
       rightPriceScale: {
-        borderColor: "#1E2A40",
-        scaleMargins: { top: 0.08, bottom: 0.12 },
+        borderColor: TV.line,
+        scaleMargins: { top: 0.1, bottom: 0.14 },
       },
       timeScale: {
-        borderColor: "#1E2A40",
+        borderColor: TV.line,
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 6,
-        barSpacing: 8,
+        rightOffset: 8,
+        barSpacing: 7,
         tickMarkFormatter: (t: Time) => hhmm(Number(t)),
       },
       localization: {
@@ -132,16 +205,17 @@ export default function CandleChart({
         locale: "pt-BR",
       },
     });
+    const fmt = {
+      type: "custom" as const,
+      formatter: (x: number) => price(x),
+      minMove: 0.00001,
+    };
     const line = (color: string, width: 1 | 2 = 1, style = LineStyle.Solid) =>
       c.addSeries(LineSeries, {
         color,
         lineWidth: width,
         lineStyle: style,
-        priceFormat: {
-          type: "custom",
-          formatter: (x: number) => price(x),
-          minMove: 0.00001,
-        },
+        priceFormat: fmt,
         priceLineVisible: false,
         lastValueVisible: false,
         crosshairMarkerVisible: false,
@@ -153,42 +227,49 @@ export default function CandleChart({
       lastValueVisible: false,
     });
     c.priceScale("vol").applyOptions({
-      scaleMargins: { top: 0.82, bottom: 0 },
+      scaleMargins: { top: 0.84, bottom: 0 },
     });
     lines.current = {
       vol,
-      bbUp: line("rgba(125,138,166,.55)"),
-      bbMid: line("rgba(125,138,166,.35)", 1, LineStyle.Dotted),
-      bbDn: line("rgba(125,138,166,.55)"),
-      vwap: line(BRASS, 1, LineStyle.Dashed),
-      ema50: line("rgba(230,236,245,.55)"),
-      ema21: line("#A78BFA"),
-      ema9: line("#5AB0FF"),
+      bbUp: line(TV.bb),
+      bbMid: line(TV.orange),
+      bbDn: line(TV.bb),
+      vwap: line("#E91E63", 2),
+      ema50: line(TV.ema50),
+      ema21: line(TV.ema21),
+      ema9: line(TV.ema9),
     };
     const s = c.addSeries(CandlestickSeries, {
-      upColor: UP,
-      downColor: DOWN,
-      borderVisible: false,
-      wickUpColor: UP,
-      wickDownColor: DOWN,
-      priceLineColor: "#E6ECF5",
-      priceLineStyle: LineStyle.Dashed,
-      priceFormat: {
-        type: "custom",
-        formatter: (x: number) => price(x),
-        minMove: 0.00001,
-      },
+      upColor: TV.up,
+      downColor: TV.down,
+      borderUpColor: TV.up,
+      borderDownColor: TV.down,
+      wickUpColor: TV.up,
+      wickDownColor: TV.down,
+      priceFormat: fmt,
+    });
+    mark.current = createTextWatermark(c.panes()[0], {
+      horzAlign: "center",
+      vertAlign: "center",
+      lines: [
+        {
+          text: "",
+          color: "rgba(120,123,134,.12)",
+          fontSize: 64,
+          fontStyle: "bold",
+        },
+      ],
     });
     chart.current = c;
     candles.current = s;
     markers.current = createSeriesMarkers(s, []);
     const move = (e: MouseEventParams<Time>) => {
-      if (e.logical == null || !hist.current.length) {
+      if (e.logical == null || !view.current.length) {
         setHover(false);
         return;
       }
       setHover(true);
-      setLegend(read(Math.min(hist.current.length - 1, Math.round(e.logical))));
+      setLegend(read(Math.min(view.current.length - 1, Math.round(e.logical))));
     };
     c.subscribeCrosshairMove(move);
     return () => {
@@ -201,21 +282,48 @@ export default function CandleChart({
       rsi.current = undefined;
     };
   }, []);
+  useEffect(() => {
+    mark.current?.applyOptions({
+      lines: [
+        {
+          text: `${title}, ${tf}`,
+          color: "rgba(120,123,134,.12)",
+          fontSize: 64,
+          fontStyle: "bold",
+        },
+      ],
+    });
+  }, [title, tf]);
   const read = (i: number): Legend | null => {
-    const b = hist.current[i];
+    const bars = view.current,
+      b = bars[i];
     if (!b) return null;
-    const s = buildSeries(hist.current.slice(0, i + 1)),
+    const s = buildSeries(bars.slice(Math.max(0, i - 400), i + 1)),
       j = s.c.length - 1;
     return {
       bar: b,
+      prev: bars[i - 1]?.c ?? b.o,
       rsi: (p.rsi === 7 ? s.rsi7 : s.rsi14)[j],
       ema9: s.ema9[j],
       ema21: s.ema21[j],
       ema50: s.ema50[j],
-      vwap: s.vwap[j],
+      bbUp: s.bbMid[j] + p.bb * s.bbStd[j],
+      bbMid: s.bbMid[j],
+      bbDn: s.bbMid[j] - p.bb * s.bbStd[j],
+      vwap: vwapAt(bars, i),
     };
   };
-  // RSI lives in its own pane, created only while it is switched on.
+  // VWAP resets at 00:00 UTC, so it is summed over the whole day.
+  const vwapAt = (bars: Bar[], i: number) => {
+    const d = Math.floor(bars[i].t / 86400000);
+    let pv = 0,
+      vs = 0;
+    for (let k = i; k >= 0 && Math.floor(bars[k].t / 86400000) === d; k--) {
+      pv += ((bars[k].h + bars[k].l + bars[k].c) / 3) * bars[k].v;
+      vs += bars[k].v;
+    }
+    return vs ? pv / vs : bars[i].c;
+  };
   useEffect(() => {
     const c = chart.current;
     if (!c) return;
@@ -223,14 +331,14 @@ export default function CandleChart({
       rsi.current = c.addSeries(
         LineSeries,
         {
-          color: "#5AB0FF",
+          color: TV.rsi,
           lineWidth: 1,
           priceLineVisible: false,
           lastValueVisible: true,
           priceFormat: {
             type: "custom",
-            formatter: (x: number) => x.toFixed(0),
-            minMove: 0.1,
+            formatter: (x: number) => x.toFixed(2).replace(".", ","),
+            minMove: 0.01,
           },
           autoscaleInfoProvider: () => ({
             priceRange: { minValue: 0, maxValue: 100 },
@@ -238,7 +346,7 @@ export default function CandleChart({
         },
         1,
       );
-      c.panes()[1]?.setHeight(110);
+      c.panes()[1]?.setHeight(120);
     } else if (!studies.has("rsi") && rsi.current) {
       c.removeSeries(rsi.current);
       rsi.current = undefined;
@@ -247,13 +355,13 @@ export default function CandleChart({
     }
     if (rsi.current) {
       for (const l of rsiLevels.current) rsi.current.removePriceLine(l);
-      rsiLevels.current = [p.level, 100 - p.level].map((v) =>
+      rsiLevels.current = [100 - p.level, 50, p.level].map((v) =>
         rsi.current!.createPriceLine({
           price: v,
-          color: "rgba(217,164,65,.6)",
+          color: v === 50 ? "rgba(120,123,134,.4)" : "rgba(120,123,134,.8)",
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
+          axisLabelVisible: false,
           title: "",
         }),
       );
@@ -271,41 +379,44 @@ export default function CandleChart({
     vis(L.vol, studies.has("vol"));
     paintAll();
   }, [studies, p]);
-  // Full redraw of indicators from history (on load, new minute, or settings change).
   const paintAll = () => {
     const L = lines.current,
-      bars = hist.current;
+      bars = (view.current = aggregate(hist.current, tf));
     if (!L || bars.length < 2) return;
-    const s = buildSeries(bars),
-      at = (arr: Float64Array, extra?: (i: number) => number) =>
-        bars.flatMap((b, i) => {
-          const v = extra ? extra(i) : arr[i];
-          return Number.isFinite(v) ? [{ time: sec(b.t), value: v }] : [];
-        });
-    L.ema9.setData(at(s.ema9));
-    L.ema21.setData(at(s.ema21));
-    L.ema50.setData(at(s.ema50));
-    L.bbMid.setData(at(s.bbMid));
-    L.bbUp.setData(at(s.bbMid, (i) => s.bbMid[i] + p.bb * s.bbStd[i]));
-    L.bbDn.setData(at(s.bbMid, (i) => s.bbMid[i] - p.bb * s.bbStd[i]));
-    L.vwap.setData(at(s.vwap));
-    L.vol.setData(
+    candles.current?.setData(
       bars.map((b) => ({
         time: sec(b.t),
-        value: b.v,
-        color: b.c >= b.o ? "rgba(31,209,160,.28)" : "rgba(242,84,107,.28)",
+        open: b.o,
+        high: b.h,
+        low: b.l,
+        close: b.c,
       })),
     );
-    rsi.current?.setData(at(p.rsi === 7 ? s.rsi7 : s.rsi14));
+    shown.current = bars[bars.length - 1].c;
+    const s = buildSeries(bars),
+      at = (get: (i: number) => number) =>
+        bars.flatMap((b, i) => {
+          const v = get(i);
+          return Number.isFinite(v) ? [{ time: sec(b.t), value: v }] : [];
+        });
+    L.ema9.setData(at((i) => s.ema9[i]));
+    L.ema21.setData(at((i) => s.ema21[i]));
+    L.ema50.setData(at((i) => s.ema50[i]));
+    L.bbMid.setData(at((i) => s.bbMid[i]));
+    L.bbUp.setData(at((i) => s.bbMid[i] + p.bb * s.bbStd[i]));
+    L.bbDn.setData(at((i) => s.bbMid[i] - p.bb * s.bbStd[i]));
+    L.vwap.setData(at((i) => s.vwap[i]));
+    L.vol.setData(
+      bars.map((b) => ({ time: sec(b.t), value: b.v, color: volColor(b) })),
+    );
+    rsi.current?.setData(at((i) => (p.rsi === 7 ? s.rsi7 : s.rsi14)[i]));
     if (!hover) setLegend(read(bars.length - 1));
   };
-  // Only the last point moves on each tick.
   const paintLast = () => {
     const L = lines.current,
-      bars = hist.current;
-    if (!L || bars.length < 60) return;
-    const tail = bars.slice(-400),
-      s = buildSeries(tail),
+      bars = view.current;
+    if (!L || bars.length < 2) return;
+    const s = buildSeries(bars.slice(-400)),
       j = s.c.length - 1,
       b = bars[bars.length - 1],
       time = sec(b.t),
@@ -317,28 +428,12 @@ export default function CandleChart({
     put(L.bbMid, s.bbMid[j]);
     put(L.bbUp, s.bbMid[j] + p.bb * s.bbStd[j]);
     put(L.bbDn, s.bbMid[j] - p.bb * s.bbStd[j]);
-    L.vol.update({
-      time,
-      value: b.v,
-      color: b.c >= b.o ? "rgba(31,209,160,.28)" : "rgba(242,84,107,.28)",
-    });
+    L.vol.update({ time, value: b.v, color: volColor(b) });
     if (rsi.current) put(rsi.current, (p.rsi === 7 ? s.rsi7 : s.rsi14)[j]);
-    // VWAP resets daily, so it needs the whole day, not just the tail.
-    if (studies.has("vwap")) {
-      const d = Math.floor(b.t / 86400000);
-      let pv = 0,
-        vs = 0;
-      for (let i = bars.length - 1; i >= 0; i--) {
-        const x = bars[i];
-        if (Math.floor(x.t / 86400000) !== d) break;
-        pv += ((x.h + x.l + x.c) / 3) * x.v;
-        vs += x.v;
-      }
-      put(L.vwap, vs ? pv / vs : b.c);
-    }
+    if (studies.has("vwap")) put(L.vwap, vwapAt(bars, bars.length - 1));
     if (!hover) setLegend(read(bars.length - 1));
   };
-  // Candle body glides to the new price instead of jumping.
+  // The last candle glides to the new price instead of jumping.
   const glide = (b: Bar) => {
     cancelAnimationFrame(anim.current);
     const from = shown.current ?? b.c,
@@ -362,12 +457,20 @@ export default function CandleChart({
       step(start + dur);
     else anim.current = requestAnimationFrame(step);
   };
-  // History load + resync once a minute (signals and results also come from here).
+  const fit = () => {
+    const w = host.current?.clientWidth ?? 800,
+      n = view.current.length;
+    chart.current?.timeScale().setVisibleLogicalRange({
+      from: Math.max(0, n - (w < 600 ? 60 : 130)),
+      to: n + 8,
+    });
+  };
   useEffect(() => {
     let stop = false,
       first = true;
     setData(null);
     hist.current = [];
+    view.current = [];
     shown.current = null;
     const load = async () => {
       try {
@@ -380,25 +483,11 @@ export default function CandleChart({
           else bars.push(live);
         }
         hist.current = bars;
-        candles.current?.setData(
-          bars.map((b) => ({
-            time: sec(b.t),
-            open: b.o,
-            high: b.h,
-            low: b.l,
-            close: b.c,
-          })),
-        );
-        shown.current = bars[bars.length - 1]?.c ?? null;
         paintAll();
         setData(d);
         setError(null);
         if (first) {
-          const w = host.current?.clientWidth ?? 800;
-          chart.current?.timeScale().setVisibleLogicalRange({
-            from: Math.max(0, bars.length - (w < 600 ? 55 : 110)),
-            to: bars.length + 5,
-          });
+          fit();
           first = false;
         }
       } catch (e) {
@@ -415,7 +504,13 @@ export default function CandleChart({
       clearInterval(timer);
     };
   }, [symbol]);
-  // Real-time: every socket tick moves the forming candle; a new minute opens a new one.
+  // Switching timeframe rebuilds the candles from the same 1-minute history.
+  useEffect(() => {
+    if (!hist.current.length) return;
+    paintAll();
+    fit();
+    setMinute(Date.now());
+  }, [tf]);
   useEffect(
     () =>
       subscribe(() => {
@@ -427,57 +522,68 @@ export default function CandleChart({
         if (b.t === last.t) bars[bars.length - 1] = b;
         else {
           bars.push(b);
-          shown.current = b.o;
           setMinute(b.t);
         }
-        glide(b);
+        const size = tf * 60000,
+          start = Math.floor(b.t / size) * size,
+          v = view.current,
+          lastView = v[v.length - 1];
+        const bucket = aggregate(
+          bars.filter((x) => x.t >= start),
+          tf,
+        )[0];
+        if (!bucket) return;
+        if (lastView && lastView.t === start) v[v.length - 1] = bucket;
+        else {
+          v.push(bucket);
+          shown.current = bucket.o;
+        }
+        glide(bucket);
         paintLast();
-        const end = b.t + 60000,
-          now = lastServerTime() || Date.now();
-        setLeft(countdown(end - now));
+        setLeft(countdown(start + size - (lastServerTime() || Date.now())));
       }),
-    [symbol, p, studies, hover],
+    [symbol, p, studies, hover, tf],
   );
-  // Markers: the selected strategy's triggers on closed candles, plus paper entries and results.
   useEffect(() => {
     if (!markers.current) return;
     const out: SeriesMarker<Time>[] = [],
       bars = hist.current,
+      size = tf * 60000,
+      bucket = (t: number) => sec(Math.floor(t / size) * size),
       spec = focus ? SPECS.get(focus.id) : undefined;
     if (spec && bars.length > 300) {
       const s = buildSeries(bars.slice(0, -1)),
-        from = Math.max(300, s.c.length - 400);
+        from = Math.max(300, s.c.length - 400 * tf);
       for (let i = from; i < s.c.length; i++) {
         const d = spec.signal(s, i);
         if (!d) continue;
         out.push({
-          time: sec(s.t[i]),
+          time: bucket(s.t[i]),
           position: d === 1 ? "belowBar" : "aboveBar",
           shape: "circle",
-          size: 0.7,
-          color: focus!.approved ? (d === 1 ? UP : DOWN) : BRASS,
+          size: 0.6,
+          color: focus!.approved ? (d === 1 ? TV.up : TV.down) : TV.orange,
         });
       }
     }
-    const minuteOf = (t: number) => sec(Math.floor(t / 60000) * 60000),
-      first = bars[0]?.t ?? 0;
+    const first = bars[0]?.t ?? 0;
     for (const s of [...signals, ...(data?.signals || [])]) {
       if ((s.entryAt ?? s.t) < first) continue;
       const buy = s.direction === "COMPRA";
       out.push({
-        time: minuteOf(s.entryAt ?? s.t),
+        time: bucket(s.entryAt ?? s.t),
         position: buy ? "belowBar" : "aboveBar",
         shape: buy ? "arrowUp" : "arrowDown",
-        color: buy ? UP : DOWN,
-        size: 1.5,
+        color: buy ? TV.up : TV.down,
+        size: 1.4,
         text: `${buy ? "Compra" : "Venda"} ${s.horizon}m`,
       });
       if (s.status === "SETTLED" && s.exitAt)
         out.push({
-          time: minuteOf(s.exitAt),
+          time: bucket(s.exitAt),
           position: "inBar",
           shape: "square",
-          color: s.result === "WIN" ? BRASS : "#7D8AA6",
+          color: s.result === "WIN" ? TV.blue : TV.muted,
           text:
             s.result === "WIN"
               ? "Ganhou"
@@ -495,7 +601,7 @@ export default function CandleChart({
     });
     unique.sort((a, b) => Number(a.time) - Number(b.time));
     markers.current.setMarkers(unique);
-  }, [data, focus, signals, minute]);
+  }, [data, focus, signals, minute, tf]);
   const toggle = (s: Study) =>
     setStudies((x) => {
       const n = new Set(x);
@@ -503,71 +609,137 @@ export default function CandleChart({
       else n.add(s);
       return n;
     });
-  const lg = legend;
-  const up = lg ? lg.bar.c >= lg.bar.o : true;
+  const lg = legend,
+    up = lg ? lg.bar.c >= lg.bar.o : true,
+    diff = lg ? lg.bar.c - lg.prev : 0,
+    label = (s: Study) =>
+      s === "rsi"
+        ? `RSI ${p.rsi}`
+        : s === "bb"
+          ? `Bandas de Bollinger 20 ${String(p.bb).replace(".", ",")}`
+          : s === "ema"
+            ? "Médias móveis 9, 21, 50"
+            : s === "vwap"
+              ? "VWAP"
+              : "Volume";
   return (
-    <div className="chart">
-      <div className="chart-tools" role="toolbar" aria-label="Indicadores">
-        {STUDIES.map((s) => (
+    <div className="tv-chart">
+      <div className="tv-toolbar" role="toolbar" aria-label="Gráfico">
+        {head}
+        <span className="tv-sep" />
+        {FRAMES.map((f) => (
           <button
-            key={s.id}
-            className={`chip ${studies.has(s.id) ? "on" : ""} study-${s.id}`}
-            aria-pressed={studies.has(s.id)}
-            onClick={() => toggle(s.id)}
+            key={f}
+            className={`tv-btn ${tf === f ? "on" : ""}`}
+            aria-pressed={tf === f}
+            onClick={() => setTf(f)}
           >
-            <i />
-            {s.id === "rsi"
-              ? `RSI ${p.rsi}`
-              : s.id === "bb"
-                ? `Bollinger ${String(p.bb).replace(".", ",")}`
-                : s.label}
+            {f}m
           </button>
         ))}
-        <span
-          className="candle-clock"
-          title="Tempo até o candle de 1 minuto fechar"
-        >
-          Candle fecha em <b>{left}</b>
+        <span className="tv-sep" />
+        <div className="tv-menu-wrap">
+          <button
+            className={`tv-btn ${menu ? "on" : ""}`}
+            aria-expanded={menu}
+            onClick={() => setMenu(!menu)}
+          >
+            <LineChart size={16} /> <span>Indicadores</span>
+            <ChevronDown size={14} />
+          </button>
+          {menu && (
+            <div className="tv-menu" role="menu">
+              {STUDIES.map((s) => (
+                <button
+                  key={s.id}
+                  role="menuitemcheckbox"
+                  aria-checked={studies.has(s.id)}
+                  onClick={() => toggle(s.id)}
+                >
+                  <span className="tv-check">
+                    {studies.has(s.id) && <Check size={14} />}
+                  </span>
+                  {label(s.id)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <span className="tv-clock" title="Tempo até o candle atual fechar">
+          {left}
         </span>
       </div>
-      {focus && (
-        <div className="chart-focus">
-          <i className={focus.approved ? "ok" : ""} />
-          {focus.label} · {focus.horizon} min · {pct(focus.outOfSample.winRate)}{" "}
-          no teste
-        </div>
-      )}
-      <div className="chart-stage">
+      <div className="tv-stage" onClick={() => menu && setMenu(false)}>
         <div className="chart-canvas" ref={host} />
         {lg && (
-          <div className="chart-legend" aria-live="off">
-            <span>
-              A <b>{price(lg.bar.o)}</b>
-            </span>
-            <span>
-              M <b>{price(lg.bar.h)}</b>
-            </span>
-            <span>
-              m <b>{price(lg.bar.l)}</b>
-            </span>
-            <span>
-              F <b className={up ? "up" : "down"}>{price(lg.bar.c)}</b>
-            </span>
+          <div className="tv-legend">
+            <div className="tv-row tv-title">
+              <b>
+                {title} · {tf} · Yosh
+              </b>
+              <span>
+                A<em className={up ? "up" : "down"}>{price(lg.bar.o)}</em>
+              </span>
+              <span>
+                M<em className={up ? "up" : "down"}>{price(lg.bar.h)}</em>
+              </span>
+              <span>
+                m<em className={up ? "up" : "down"}>{price(lg.bar.l)}</em>
+              </span>
+              <span>
+                F<em className={up ? "up" : "down"}>{price(lg.bar.c)}</em>
+              </span>
+              <em className={diff >= 0 ? "up" : "down"}>
+                {diff >= 0 ? "+" : ""}
+                {price(diff)} ({diff >= 0 ? "+" : ""}
+                {pct(lg.prev ? diff / lg.prev : 0, 2)})
+              </em>
+            </div>
             {studies.has("ema") && (
-              <>
-                <span className="k-ema9">EMA9 {price(lg.ema9)}</span>
-                <span className="k-ema21">EMA21 {price(lg.ema21)}</span>
-                <span className="k-ema50">EMA50 {price(lg.ema50)}</span>
-              </>
+              <div className="tv-row">
+                <span>EMA 9 21 50</span>
+                <em style={{ color: TV.ema9 }}>{price(lg.ema9)}</em>
+                <em style={{ color: TV.ema21 }}>{price(lg.ema21)}</em>
+                <em style={{ color: TV.ema50 }}>{price(lg.ema50)}</em>
+              </div>
+            )}
+            {studies.has("bb") && (
+              <div className="tv-row">
+                <span>BB 20 {String(p.bb).replace(".", ",")}</span>
+                <em style={{ color: TV.orange }}>{price(lg.bbMid)}</em>
+                <em style={{ color: TV.bb }}>{price(lg.bbUp)}</em>
+                <em style={{ color: TV.bb }}>{price(lg.bbDn)}</em>
+              </div>
             )}
             {studies.has("vwap") && (
-              <span className="k-vwap">VWAP {price(lg.vwap)}</span>
+              <div className="tv-row">
+                <span>VWAP</span>
+                <em style={{ color: "#E91E63" }}>{price(lg.vwap)}</em>
+              </div>
             )}
-            {studies.has("rsi") && Number.isFinite(lg.rsi) && (
-              <span className="k-rsi">
-                RSI{p.rsi} {lg.rsi.toFixed(1).replace(".", ",")}
-              </span>
+            {studies.has("rsi") && (
+              <div className="tv-row">
+                <span>RSI {p.rsi}</span>
+                <em style={{ color: TV.rsi }}>{n2(lg.rsi)}</em>
+              </div>
             )}
+            {studies.has("vol") && (
+              <div className="tv-row">
+                <span>Vol</span>
+                <em className={up ? "up" : "down"}>
+                  {lg.bar.v.toLocaleString("pt-BR", {
+                    maximumFractionDigits: 2,
+                  })}
+                </em>
+              </div>
+            )}
+          </div>
+        )}
+        {focus && (
+          <div className="tv-focus">
+            <i className={focus.approved ? "ok" : ""} />
+            {focus.label} · {focus.horizon} min ·{" "}
+            {pct(focus.outOfSample.winRate)} no teste
           </div>
         )}
         {!data && !error && (

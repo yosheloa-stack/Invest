@@ -20,7 +20,7 @@ export default function Scene3D({ intensity = 1 }: { intensity?: number }) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     el.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x0a0f1a, 16, 60);
+    scene.fog = new THREE.Fog(0x131722, 16, 60);
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 120);
     camera.position.set(0, 7.5, 16);
     camera.lookAt(0, 1, -12);
@@ -28,7 +28,7 @@ export default function Scene3D({ intensity = 1 }: { intensity?: number }) {
     const key = new THREE.DirectionalLight(0xffffff, 2.2);
     key.position.set(6, 12, 8);
     scene.add(key);
-    const rim = new THREE.PointLight(0xd9a441, 40, 40);
+    const rim = new THREE.PointLight(0x2962ff, 40, 40);
     rim.position.set(-8, 6, -10);
     scene.add(rim);
     const rows = 7,
@@ -44,11 +44,11 @@ export default function Scene3D({ intensity = 1 }: { intensity?: number }) {
     );
     const wick = new THREE.InstancedMesh(
       new THREE.BoxGeometry(0.06, 1, 0.06),
-      new THREE.MeshBasicMaterial({ color: 0x5c6b8a }),
+      new THREE.MeshBasicMaterial({ color: 0x5d606b }),
       count,
     );
-    const up = new THREE.Color(0x1fd1a0),
-      down = new THREE.Color(0xf2546b),
+    const up = new THREE.Color(0x089981),
+      down = new THREE.Color(0xf23645),
       m = new THREE.Matrix4(),
       q = new THREE.Quaternion(),
       v = new THREE.Vector3(),
@@ -82,7 +82,7 @@ export default function Scene3D({ intensity = 1 }: { intensity?: number }) {
     const group = new THREE.Group();
     group.add(body, wick);
     scene.add(group);
-    const grid = new THREE.GridHelper(120, 60, 0x1e2a40, 0x131b2b);
+    const grid = new THREE.GridHelper(120, 60, 0x2a2e39, 0x1e222d);
     grid.position.y = -3.2;
     scene.add(grid);
     const place = (offset: number) => {
