@@ -140,6 +140,13 @@ test("famous indicator families exist, fire, and never look ahead", () => {
       "donchian",
       "psar",
       "confluencia",
+      "mhi",
+      "milhao",
+      "engolfo",
+      "martelo",
+      "vela-forca",
+      "divergencia",
+      "bb-estocastico",
     ];
   const short = buildSeries(cs.slice(0, 2000)),
     long = buildSeries(cs);

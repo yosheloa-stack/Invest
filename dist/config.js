@@ -67,7 +67,11 @@ const schema = z.object({
     // Forex pairs (Yahoo Finance, polled; no volume). Empty disables Forex.
     FOREX_SYMBOLS: z
         .string()
-        .default("EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF,EURJPY,EURGBP,NZDUSD"),
+        .default("EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF,EURJPY,EURGBP,NZDUSD,GBPJPY,AUDJPY,EURAUD,EURCAD,EURCHF,GBPCHF,GBPAUD,AUDCAD,CADJPY,CHFJPY,NZDJPY"),
+    // Commodities, indices and stocks, also from Yahoo Finance (same polling as Forex).
+    MARKET_SYMBOLS: z
+        .string()
+        .default("XAUUSD,XAGUSD,USOIL,US100,US500,US30,GER40,AAPL,TSLA,AMZN,MSFT,NVDA,META,GOOGL"),
     FX_POLL_MS: z.coerce.number().int().min(2000).default(8000),
     FX_STALE_MS: z.coerce.number().int().min(5000).default(30000),
 });
@@ -80,14 +84,27 @@ if (!crypto.length ||
 export const fxSymbols = config.FOREX_SYMBOLS.split(",")
     .map((x) => x.trim().toUpperCase())
     .filter(Boolean);
+const others = config.MARKET_SYMBOLS.split(",")
+    .map((x) => x.trim().toUpperCase())
+    .filter(Boolean);
 if (fxSymbols.some((x) => !/^[A-Z]{6}$/.test(x) || crypto.includes(x)) ||
     new Set(fxSymbols).size !== fxSymbols.length)
     throw Error("FOREX_SYMBOLS inválidos ou duplicados");
+if (others.some((x) => !/^[A-Z0-9]{2,8}$/.test(x) || [...crypto, ...fxSymbols].includes(x)) ||
+    new Set(others).size !== others.length)
+    throw Error("MARKET_SYMBOLS inválidos ou duplicados");
+// Everything polled from Yahoo: Forex pairs, then commodities, indices and stocks.
+fxSymbols.push(...others);
 // Crypto first, then Forex pairs.
 export const symbols = [...crypto, ...fxSymbols];
 export const isFx = (symbol) => fxSymbols.includes(symbol);
 // Forex prices are polled, so they are allowed to be older than exchange trades.
-export const staleMs = (symbol) => isFx(symbol) ? config.FX_STALE_MS : config.STALE_MS;
+// Each Yahoo symbol is polled in turn; with many of them the per-symbol interval grows so the
+// total stays near two requests per second.
+export const fxPollMs = Math.max(config.FX_POLL_MS, fxSymbols.length * 500);
+export const staleMs = (symbol) => isFx(symbol)
+    ? Math.max(config.FX_STALE_MS, Math.round(fxPollMs * 2.5))
+    : config.STALE_MS;
 export const weights = z
     .record(z.number().min(0).max(10))
     .parse(JSON.parse(config.GROUP_WEIGHTS));

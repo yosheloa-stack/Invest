@@ -2,7 +2,20 @@ const HOSTS = [
     "https://query1.finance.yahoo.com",
     "https://query2.finance.yahoo.com",
 ];
-export const yahooSymbol = (symbol) => `${symbol}=X`;
+// Our names for commodities and indices, as Yahoo lists them (futures or cash index).
+const YAHOO = {
+    XAUUSD: "GC=F",
+    XAGUSD: "SI=F",
+    USOIL: "CL=F",
+    UKOIL: "BZ=F",
+    US100: "NQ=F",
+    US500: "ES=F",
+    US30: "YM=F",
+    GER40: "^GDAXI",
+    UK100: "^FTSE",
+    JP225: "^N225",
+};
+export const yahooSymbol = (symbol) => YAHOO[symbol] ?? (/^[A-Z]{6}$/.test(symbol) ? `${symbol}=X` : symbol);
 export async function yahooChart(symbol, interval, from, to) {
     const q = `/v8/finance/chart/${encodeURIComponent(yahooSymbol(symbol))}?interval=${interval}&period1=${Math.floor(from / 1000)}&period2=${Math.ceil(to / 1000)}&includePrePost=false`;
     let last;

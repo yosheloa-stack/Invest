@@ -61,7 +61,10 @@ function byFamily(family: string | undefined): Study[] {
     case "macd":
       return ["rsi"];
     case "squeeze":
+    case "bb-estocastico":
       return ["bb"];
+    case "divergencia":
+      return ["rsi"];
     case "vwap":
       return ["vwap"];
     case "fluxo":
@@ -119,6 +122,18 @@ export const FAMILY_TEXT: Record<string, string> = {
   donchian:
     "Canal Donchian (Turtle): fechamento rompe a máxima ou mínima do canal.",
   psar: "Parabolic SAR: entra quando os pontos trocam de lado.",
+  mhi: "MHI: olha as 3 últimas velas de M5 e entra na cor da minoria (ou da maioria).",
+  milhao: "Milhão: igual ao MHI, mas contando as 5 últimas velas de M5.",
+  engolfo:
+    "Engolfo em M5: vela que cobre todo o corpo da anterior, de cor oposta.",
+  martelo:
+    "Martelo ou estrela cadente em M5: pavio de rejeição com pelo menos o dobro do corpo.",
+  "vela-forca":
+    "Vela de força em M5: corpo grande, bem acima da média, a favor do movimento.",
+  divergencia:
+    "Divergência: o preço faz nova máxima ou mínima e o RSI não confirma.",
+  "bb-estocastico":
+    "Bollinger + Estocástico: preço fora da banda e estocástico virando do extremo.",
   confluencia:
     "Só entra quando SuperTrend, MACD, Ichimoku, Heikin Ashi e EMAs passam a concordar.",
 };

@@ -299,6 +299,7 @@ const crossUp = (a: Float64Array, b: Float64Array, i: number) =>
   i > 0 && a[i - 1] <= b[i - 1] && a[i] > b[i];
 const crossDown = (a: Float64Array, b: Float64Array, i: number) =>
   i > 0 && a[i - 1] >= b[i - 1] && a[i] < b[i];
+export const adxAt = (s: Series, i: number) => dmi(s).adx[i];
 // Five independent trend readings; the confluence family enters when they newly agree.
 function votes(s: Series, i: number) {
   const m = macd(s),

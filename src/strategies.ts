@@ -1,5 +1,10 @@
-import { famousStrategies } from "./famous.js";
-import { contextAllows, structuralStrategies } from "./price-context.js";
+import { binaryStrategies } from "./binary.js";
+import { adxAt, famousStrategies } from "./famous.js";
+import {
+  contextAllows,
+  priceContext,
+  structuralStrategies,
+} from "./price-context.js";
 import type { Candle, Horizon } from "./types.js";
 // Rule-based strategies on closed 1m candles, validated by chronological backtest.
 // Selection happens on the in-sample slice only; approval uses the untouched out-of-sample slice.
@@ -470,6 +475,7 @@ export function catalog(): StrategySpec[] {
     );
   out.push(...structuralStrategies());
   out.push(...famousStrategies());
+  out.push(...binaryStrategies());
   return out.map((spec) => ({
     ...spec,
     id: spec.id.includes(":ctx2")
@@ -477,9 +483,46 @@ export function catalog(): StrategySpec[] {
       : spec.id.replace(/:(seguir|reverter)$/, ":ctx2:$1"),
     signal: (s, i) => {
       const d = spec.signal(s, i);
+      if (!d || !regimeAllows(spec.family, s, i)) return 0;
+      // A divergence is a turn at a new extreme, so it cannot wait for a range edge;
+      // it only must not fight a confirmed trend.
+      if (spec.family === "divergencia") {
+        const t = priceContext(s, i).trend;
+        return !t || t === d ? d : 0;
+      }
       return contextAllows(s, i, d) ? d : 0;
     },
   }));
+}
+// What each indicator is for: trend tools only work when there is a trend (ADX >= 20),
+// oscillators and reversal setups only when the market is not trending hard (ADX < 25).
+export const TREND_FAMILIES = new Set([
+  "supertrend",
+  "utbot",
+  "macd",
+  "ichimoku",
+  "adx",
+  "donchian",
+  "psar",
+  "heikin-ashi",
+  "pullback",
+  "confluencia",
+  "impulso",
+  "sr-rompimento",
+  "vela-forca",
+  "squeeze",
+  "sequencia",
+  "fluxo",
+]);
+export const regimeOf = (family: string) =>
+  TREND_FAMILIES.has(family) ? "tendencia" : "reversao";
+// Structural setups already read the regime from price itself (trend lines, range edges).
+const OWN_REGIME = new Set(["lateral", "estrutura", "fibonacci"]);
+export function regimeAllows(family: string, s: Series, i: number) {
+  if (OWN_REGIME.has(family)) return true;
+  const adx = adxAt(s, i);
+  if (!Number.isFinite(adx)) return false;
+  return TREND_FAMILIES.has(family) ? adx >= 20 : adx < 25;
 }
 // One-sided Wilson lower bound of the win rate.
 export function wilson(wins: number, n: number, z: number) {

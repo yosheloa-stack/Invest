@@ -1,7 +1,7 @@
 import WebSocket from "ws";
 import { websocketAgent } from "./network.js";
 import { EventEmitter } from "node:events";
-import { config, isFx, staleMs, symbols } from "./config.js";
+import { config, isFx, staleMs, symbols, fxPollMs } from "./config.js";
 import { combine, fillGaps, yahooChart } from "./fx.js";
 import { INTERVALS } from "./types.js";
 import { log } from "./log.js";
@@ -409,7 +409,7 @@ export class MarketData extends EventEmitter {
                 s.error = "ERRO NA FONTE FOREX";
                 log.warn({ err: e, symbol: s.symbol }, "forex");
             }
-            this.pollFx(s, config.FX_POLL_MS);
+            this.pollFx(s, fxPollMs);
         }, wait);
         this.timers.add(timer);
     }

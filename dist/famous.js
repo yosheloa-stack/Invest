@@ -243,6 +243,7 @@ function psar(s) {
 }
 const crossUp = (a, b, i) => i > 0 && a[i - 1] <= b[i - 1] && a[i] > b[i];
 const crossDown = (a, b, i) => i > 0 && a[i - 1] >= b[i - 1] && a[i] < b[i];
+export const adxAt = (s, i) => dmi(s).adx[i];
 // Five independent trend readings; the confluence family enters when they newly agree.
 function votes(s, i) {
     const m = macd(s), ic = ichimoku(s), ha = heikinAshi(s), v = [
