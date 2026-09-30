@@ -10,7 +10,7 @@ const lock = new DatabaseSync(target+'.collector-lock');
 const db = new DatabaseSync(source,{readOnly:true});
 try {
  lock.exec('PRAGMA busy_timeout=0; CREATE TABLE IF NOT EXISTS owner(id INTEGER); BEGIN EXCLUSIVE;');
- if (db.prepare('PRAGMA quick_check').get().quick_check !== 'ok' || db.prepare('PRAGMA user_version').get().user_version !== 1) throw Error('Backup inválido/incompatível');
+ if (db.prepare('PRAGMA quick_check').get().quick_check !== 'ok' || db.prepare('PRAGMA user_version').get().user_version < 1 || db.prepare('PRAGMA user_version').get().user_version > 3) throw Error('Backup inválido/incompatível');
  for (const table of ['signals','snapshots','observations','news','outbox']) db.prepare(`SELECT * FROM ${table} LIMIT 0`).all();
  if (existsSync(target)) {
    const current = new DatabaseSync(target,{readOnly:true});

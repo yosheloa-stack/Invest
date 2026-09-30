@@ -1505,6 +1505,315 @@ tr.ok td {
   padding: 9px 0;
   border-bottom: 1px solid var(--line);
 }
+/* Robô IA */
+.rb-hero {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 20px 22px;
+}
+.rb-avatar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  color: var(--muted);
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+}
+.rb-avatar.on {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.rb-avatar.on::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  animation: rb-pulse 2.4s ease-out infinite;
+}
+@keyframes rb-pulse {
+  from {
+    opacity: 0.8;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.25);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rb-avatar.on::after {
+    animation: none;
+    opacity: 0.4;
+  }
+}
+.rb-hero-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+.rb-hero-text h1 {
+  font-size: 24px;
+}
+.rb-hero-text p {
+  color: var(--soft);
+}
+.rb-ai.on {
+  color: var(--up-text);
+  border-color: var(--up);
+}
+.rb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line-2);
+  background: var(--raised);
+  border-radius: var(--r);
+  padding: 9px 14px;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+.rb-toggle:hover {
+  background: var(--hover);
+}
+.rb-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+}
+.rb-opens {
+  display: grid;
+  gap: 10px;
+}
+.rb-open {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-2);
+  border-radius: var(--r);
+  padding: 12px;
+  display: grid;
+  gap: 9px;
+  background: var(--raised);
+}
+.rb-open.win {
+  border-left-color: var(--up);
+}
+.rb-open.lose {
+  border-left-color: var(--down);
+}
+.rb-open-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rb-count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+}
+.rb-bar {
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.rb-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.5s linear;
+}
+.rb-open-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.rb-open-grid b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.rb-open-grid span:last-child {
+  margin-left: auto;
+  font-weight: 600;
+}
+.rb-why {
+  font-size: 12px;
+  color: var(--muted);
+}
+.rb-dir {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 1px 7px 1px 4px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.rb-dir.buy {
+  color: var(--up-text);
+  background: var(--up-soft);
+}
+.rb-dir.sell {
+  color: var(--down-text);
+  background: var(--down-soft);
+}
+.rb-ask {
+  display: flex;
+  gap: 8px;
+}
+.rb-ask select {
+  flex: 1;
+  min-width: 0;
+}
+.rb-ask .primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+}
+.bad-inline {
+  margin-top: 10px;
+  color: var(--down-text);
+  border-color: var(--down);
+}
+.rb-result {
+  margin-top: 14px;
+  display: grid;
+  gap: 12px;
+}
+.rb-verdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-size: 15px;
+}
+.rb-trend {
+  font-size: 12px;
+  border-radius: 4px;
+  padding: 1px 7px;
+  border: 1px solid var(--line-2);
+  color: var(--soft);
+  white-space: nowrap;
+}
+.rb-verdict .rb-trend {
+  margin-left: auto;
+}
+.rb-trend.alta {
+  color: var(--up-text);
+  border-color: var(--up);
+}
+.rb-trend.baixa {
+  color: var(--down-text);
+  border-color: var(--down);
+}
+.rb-text {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 var(--r) var(--r) 0;
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+}
+.rb-text small {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.rb-lines {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  color: var(--soft);
+  font-size: 13.5px;
+}
+.rb-reads {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 8px;
+}
+.rb-reads button {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  text-align: left;
+  border: 1px solid var(--line);
+  background: var(--raised);
+  border-radius: var(--r);
+  padding: 10px 12px;
+}
+.rb-reads button:hover {
+  background: var(--hover);
+}
+.rb-read-why {
+  flex: 1 0 100%;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.rb-table td {
+  white-space: nowrap;
+}
+.rb-table td.rb-why-cell {
+  white-space: normal;
+}
+.rb-why-cell {
+  font-size: 12.5px;
+  color: var(--soft);
+  min-width: 220px;
+}
+.rb-mini {
+  margin-top: 8px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px dashed var(--line-2);
+  background: none;
+  border-radius: var(--r);
+  padding: 8px 10px;
+  font-size: 12.5px;
+  color: var(--soft);
+  text-align: left;
+}
+.rb-mini svg {
+  color: var(--accent-text);
+  flex: 0 0 auto;
+}
+.rb-mini:hover {
+  background: var(--hover);
+}
+@media (max-width: 1080px) {
+  .rb-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .rb-hero {
+    flex-wrap: wrap;
+    padding: 16px;
+  }
+  .rb-toggle {
+    width: 100%;
+    justify-content: center;
+  }
+  .rb-reads {
+    grid-template-columns: 1fr;
+  }
+}
 /* Tablet */
 @media (max-width: 1080px) {
   .tv {

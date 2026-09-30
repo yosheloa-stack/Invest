@@ -15,6 +15,7 @@ import {
   ScrollText,
   Settings2,
   Box,
+  Bot,
   List,
   ChevronDown,
   CandlestickChart,
@@ -35,6 +36,7 @@ import { lastMove, liveBar, pushTick, useTicks, lastServerTime } from "./live";
 import { FAMILY_TEXT, directionText } from "./studies";
 import CandleChart from "./CandleChart";
 import SignalDock from "./SignalDock";
+import RobotView, { RobotMini } from "./RobotView";
 import {
   api,
   clock,
@@ -49,9 +51,10 @@ import {
 import type { Evaluation, Lab, Metric, News, State, User } from "./types";
 const Scene3D = lazy(() => import("./Scene3D"));
 const Market3D = lazy(() => import("./Market3D"));
-type Tab = "trade" | "lab" | "history" | "news" | "stats" | "system";
+type Tab = "trade" | "robot" | "lab" | "history" | "news" | "stats" | "system";
 const TABS: { id: Tab; label: string; icon: typeof Activity }[] = [
   { id: "trade", label: "Operar", icon: ChartCandlestick },
+  { id: "robot", label: "Robô IA", icon: Bot },
   { id: "lab", label: "Estratégias", icon: BrainCircuit },
   { id: "history", label: "Histórico", icon: ScrollText },
   { id: "news", label: "Notícias", icon: Newspaper },
@@ -247,6 +250,16 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               onSelect={select}
               fresh={fresh}
               now={serverNow}
+              onRobot={() => setTab("robot")}
+            />
+          )}
+          {tab === "robot" && (
+            <RobotView
+              state={state}
+              user={user}
+              selected={asset?.symbol ?? selected}
+              now={serverNow}
+              onOpen={open}
             />
           )}
           {tab === "lab" && <LabView lab={lab} onOpen={open} />}
@@ -429,7 +442,9 @@ function TradeView({
   onSelect,
   fresh,
   now,
+  onRobot,
 }: {
+  onRobot: () => void;
   state: State | null;
   lab: Lab | null;
   selected: string;
@@ -546,6 +561,12 @@ function TradeView({
           <section className="side-block">
             <h3>Sinal por expiração</h3>
             <Expiries state={state} asset={asset} fresh={fresh} now={now} />
+            <RobotMini
+              robot={state.robot}
+              symbol={asset.symbol}
+              now={now}
+              onOpen={onRobot}
+            />
           </section>
           <div className="tv-tabs" role="tablist">
             {SIDE.map((t) => (

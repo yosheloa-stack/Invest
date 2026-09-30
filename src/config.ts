@@ -52,6 +52,18 @@ const schema = z.object({
       '{"trend":1,"momentum":1,"structure":1,"volume":1,"flow":1,"mtf":1,"news":1,"reaction":1}',
     ),
   LOG_LEVEL: z.string().default("info"),
+  ROBOT_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((x) => x === "true"),
+  ROBOT_STAKE: z.coerce.number().positive().default(10),
+  ROBOT_BANKROLL: z.coerce.number().positive().default(1000),
+  ROBOT_MAX_OPEN: z.coerce.number().int().min(1).max(11).default(3),
+  ROBOT_MIN_TRADES: z.coerce.number().int().min(10).default(30),
+  ROBOT_MIN_WINRATE: z.coerce.number().min(0).max(0.99).default(0),
+  ANTHROPIC_API_KEY: z.string().trim().default(""),
+  ROBOT_AI_MODEL: z.string().trim().default("claude-opus-5"),
+  ROBOT_AI_MAX_PER_HOUR: z.coerce.number().int().min(0).default(30),
 });
 export const config = schema.parse(process.env);
 export const symbols = config.SYMBOLS.split(",").map((x) =>

@@ -148,6 +148,90 @@ export type State = {
   news: News[];
   models: { id: string; symbol: string; horizon: number }[];
   strategies?: LabBrief;
+  robot?: RobotBrief | null;
+};
+export type RobotTrade = {
+  id: string;
+  symbol: string;
+  horizon: number;
+  direction: "COMPRA" | "VENDA";
+  strategy: string;
+  score: number;
+  backtestWinRate: number | null;
+  openedAt: number;
+  entry: number;
+  due: number;
+  stake: number;
+  payout: number;
+  status: "ABERTA" | "FECHADA" | "CANCELADA";
+  exit?: number;
+  closedAt?: number;
+  result?: "WIN" | "LOSS" | "EMPATE";
+  profit?: number;
+  note?: string;
+  reading: string[];
+  ai: { model: string; confidence: number; reason: string } | null;
+};
+export type RobotStats = {
+  trades: number;
+  wins: number;
+  losses: number;
+  ties: number;
+  winRate: number | null;
+  profit: number;
+  balance: number;
+  bankroll: number;
+  todayTrades: number;
+  todayProfit: number;
+  streak: number;
+  byHorizon: {
+    horizon: number;
+    wins: number;
+    losses: number;
+    winRate: number | null;
+  }[];
+};
+export type RobotBrief = {
+  enabled: boolean;
+  status: string;
+  stats: RobotStats;
+  open: RobotTrade[];
+  last: RobotTrade[];
+};
+export type MarketRead = {
+  symbol: string;
+  t: number;
+  price: number;
+  trend: "ALTA" | "BAIXA" | "LATERAL";
+  range: boolean;
+  support: number | null;
+  resistance: number | null;
+  rsi: number | null;
+  why: string;
+  lines: string[];
+  pick: {
+    label: string;
+    direction: "COMPRA" | "VENDA";
+    horizon: number;
+    score: number;
+  } | null;
+};
+export type RobotSummary = RobotBrief & {
+  breakEven: number;
+  minScore: number;
+  minTrades: number;
+  stake: number;
+  payout: number;
+  maxOpen: number;
+  ai: {
+    enabled: boolean;
+    model: string | null;
+    usedLastHour: number;
+    maxPerHour: number;
+    lastError: string | null;
+  };
+  trades: RobotTrade[];
+  reads: MarketRead[];
 };
 export type User = { id: string; email: string; name: string; role: string };
 export type Trigger = {

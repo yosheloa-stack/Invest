@@ -34,6 +34,18 @@ O repositório já contém dist/ e public/ compilados, então a Square Cloud nã
 
 Ao alterar código em src/ ou web/, rode npm run build e faça commit de dist/ e public/ junto, senão a Square continuará servindo o build anterior.
 
+## Robô IA (opcional)
+
+O robô opera sozinho em SIMULAÇÃO (aba "Robô IA"): a cada candle de 1 minuto lê o mercado, entra quando um gatilho com histórico acima do equilíbrio dispara, e registra ganho/perda no vencimento. Nunca envia ordem à corretora.
+
+Para ligar a análise do Claude, adicione em Variáveis de ambiente:
+
+| Nome | Valor |
+|---|---|
+| ANTHROPIC_API_KEY | Sua chave da API (console.anthropic.com → API Keys) |
+
+Opcionais: ROBOT_AI_MODEL (padrão claude-opus-5), ROBOT_AI_MAX_PER_HOUR (padrão 30 consultas por hora), ROBOT_STAKE (10), ROBOT_BANKROLL (1000), ROBOT_MAX_OPEN (3), ROBOT_MIN_TRADES (30), ROBOT_ENABLED (true). Sem a chave, o robô funciona só com as regras.
+
 ## Persistência e compatibilidade
 
 O arquivo persiste em reinícios normais enquanto o disco da aplicação for preservado. A retenção pela Square Cloud em atualização/redeploy não foi verificada nesta conta; não presuma que recriar/excluir a aplicação preserve arquivos. Mantenha uma cópia de backup fora da hospedagem. Nunca inclua data/, backups/, .env ou senhas no ZIP compartilhado.

@@ -19,6 +19,7 @@ import { ModelRegistry } from "./models.js";
 import { buildFeatures } from "./features.js";
 import { evaluate, advanceSignal, strategyDecision } from "./signals.js";
 import { StrategyLab } from "./lab.js";
+import { Robot } from "./robot-runner.js";
 import {
   HORIZONS,
   type Decision,
@@ -43,7 +44,8 @@ app.use((_req, res, next) => {
   );
   next();
 });
-let accounts: Accounts | null = null;
+let accounts: Accounts | null = null,
+  robot: Robot | null = null;
 app.set("trust proxy", 1);
 app.get("/healthz", (_req, res) => res.json({ status: "alive" }));
 const auth = mountAuth(app, () => accounts, {
@@ -122,6 +124,7 @@ function view() {
     models: models.summary(),
     modelErrors: models.errors,
     strategies: lab.brief(),
+    robot: robot?.brief() ?? null,
     metrics: stats,
     news: newsList,
     newsCategories,
@@ -247,6 +250,58 @@ app.get("/api/news", (_req, res) =>
   }),
 );
 app.get("/api/strategies", (_req, res) => res.json(lab.summary()));
+function closedCandles(symbol: string) {
+  const s = market.states.get(symbol),
+    now = market.rest.now();
+  return s ? s.candles["1m"].filter((c) => c.end < now) : [];
+}
+function priceOf(symbol: string) {
+  const s = market.states.get(symbol);
+  if (!s?.trade || market.reasons(s).length) return null;
+  return { p: s.trade.p, t: s.trade.t };
+}
+app.get("/api/robot", (_req, res) => {
+  if (!robot) return void res.status(503).json({ error: "Robô iniciando" });
+  res.json(robot.summary());
+});
+app.post(
+  "/api/robot/toggle",
+  express.json({ limit: "1kb" }),
+  auth.requireAdmin,
+  (req, res) => {
+    if (!robot) return void res.status(503).json({ error: "Robô iniciando" });
+    robot.enabled = Boolean(req.body?.enabled);
+    robot.status = robot.enabled ? "PROCURANDO OPORTUNIDADE" : "PAUSADO";
+    res.json({ enabled: robot.enabled });
+  },
+);
+app.post(
+  "/api/robot/analyze",
+  express.json({ limit: "1kb" }),
+  async (req, res) => {
+    const symbol = String(req.body?.symbol || "").toUpperCase();
+    if (!robot || !market.states.has(symbol))
+      return void res.status(404).json({ error: "Ativo não monitorado" });
+    const closed = closedCandles(symbol);
+    if (!lab.evaluations.length)
+      return void res
+        .status(503)
+        .json({ error: "Aguardando o laboratório terminar o backtest" });
+    const read = robot.read(symbol, closed);
+    if (!read)
+      return void res
+        .status(503)
+        .json({ error: "Histórico de candles ainda insuficiente" });
+    const text = robot.ai.enabled ? await robot.ai.explain(read, closed) : null;
+    res.json({
+      read,
+      text,
+      source: text ? "ia" : "regras",
+      model: text ? robot.ai.model : null,
+      aiError: robot.ai.enabled && !text ? robot.ai.lastError : null,
+    });
+  },
+);
 app.get("/api/models", (_req, res) =>
   res.json({ models: models.summary(), errors: models.errors }),
 );
@@ -341,6 +396,8 @@ async function initialize() {
       `${s.symbol}:${s.horizon}`,
       Math.max(cooldowns.get(`${s.symbol}:${s.horizon}`) || 0, s.t),
     );
+  robot = new Robot(store.pool, lab);
+  robot.load(market.rest.now());
   await market.start();
   lab.start();
   initialized = true;
@@ -524,6 +581,17 @@ async function tick() {
           d,
         ]);
       }
+    }
+    if (robot && store.healthy) {
+      robot.settle(market.rest.now(), priceOf);
+      for (const s of cycle)
+        if (!market.reasons(s).length)
+          robot.onCandle(
+            s.symbol,
+            s.candles["1m"].filter((c) => c.end < now),
+            priceOf,
+            market.rest.now(),
+          );
     }
     if (signalsChanged) stats = await store.stats();
     broadcast();

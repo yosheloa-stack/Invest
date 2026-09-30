@@ -21,6 +21,7 @@
     "lab": "node --import tsx scripts/lab.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.129.0",
     "express": "5.1.0",
     "https-proxy-agent": "^7.0.6",
     "pino": "9.9.0",
