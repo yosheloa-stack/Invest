@@ -96,12 +96,15 @@ export function feedReasons(s, now, clockOk) {
         r.push("LIVRO PARCIAL ATRASADO");
     if (now - s.connectedAt < 60000)
         r.push("AQUECENDO MICROESTRUTURA (60s)");
+    // Yahoo is polled every few seconds and its last 1m bar can trail by a minute, so a
+    // polled symbol's closed candle may be later than an exchange stream's.
+    const grace = isFx(s.symbol) ? stale + 60000 : 5000;
     for (const [tf, ms] of Object.entries(INTERVALS)) {
         const a = s.candles[tf];
         if (a.length < 250 || !contiguous(a, ms))
             r.push(`HISTÓRICO ${tf} INSUFICIENTE / GAP`);
         if (!a.length ||
-            now - a[a.length - 1].end > ms + 5000 ||
+            now - a[a.length - 1].end > ms + grace ||
             now - (s.lastKline[tf] || 0) > stale)
             r.push(`CANDLES ${tf} ATRASADOS`);
     }
