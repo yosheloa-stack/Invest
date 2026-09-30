@@ -46,6 +46,9 @@ export const PALETTE = {
     watermark: "rgba(255,255,255,.06)",
     up: "#089981",
     down: "#f23645",
+    // Candle-pattern marks: their own hues so they never blend into green/red candles.
+    patternUp: "#18ffff",
+    patternDown: "#ffd600",
     blue: "#2962ff",
     orange: "#ff9800",
     ema9: "#2962ff",
@@ -72,6 +75,8 @@ export const PALETTE = {
     watermark: "rgba(19,23,34,.06)",
     up: "#089981",
     down: "#f23645",
+    patternUp: "#0060a8",
+    patternDown: "#8d5a00",
     blue: "#2962ff",
     orange: "#f57c00",
     ema9: "#2962ff",

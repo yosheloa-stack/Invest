@@ -12,6 +12,8 @@
   --soft: #b5b8c0;
   --muted: #868993;
   --up: #089981;
+  --pattern-up: #18ffff;
+  --pattern-down: #ffd600;
   --down: #f23645;
   --up-text: #22ab94;
   --down-text: #f7525f;
@@ -36,6 +38,8 @@
   --soft: #434651;
   --muted: #6a6d78;
   --up: #089981;
+  --pattern-up: #0060a8;
+  --pattern-down: #8d5a00;
   --down: #f23645;
   --up-text: #067a67;
   --down-text: #d1283a;
@@ -2822,10 +2826,10 @@ tr.ok td {
   border-left: 3px solid var(--line-2);
 }
 .pattern.buy {
-  border-left-color: var(--up);
+  border-left-color: var(--pattern-up);
 }
 .pattern.sell {
-  border-left-color: var(--down);
+  border-left-color: var(--pattern-down);
 }
 .pattern p {
   margin: 0;

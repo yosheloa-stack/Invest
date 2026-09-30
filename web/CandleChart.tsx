@@ -796,7 +796,7 @@ export default function CandleChart({
           position: hit.bias > 0 ? "belowBar" : "aboveBar",
           shape: "circle",
           size: 0.4,
-          color: hit.bias > 0 ? pal.current.up : pal.current.down,
+          color: hit.bias > 0 ? pal.current.patternUp : pal.current.patternDown,
           text: named ? hit.name : undefined,
         });
       }
