@@ -14,6 +14,7 @@ Não precisa contratar PostgreSQL. O banco é um arquivo criado automaticamente 
 | PUBLIC_ORIGIN | Endereço HTTPS real da aplicação, sem caminho; exemplo https://yosh-crypto-scanner.squareweb.app |
 | MODE | PAPER |
 | PAYOUT | Opcional. Padrão 0.9 (payout da Ebinex em BTC, ETH, SOL e outros); break-even 52,6%. Use 0.96 só se operar ativos que pagam 96%. |
+| FOREX_SYMBOLS | Opcional. Padrão EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF,EURJPY,EURGBP,NZDUSD (cotação do Yahoo Finance, sem chave, atualizada a cada 8 s; Forex não tem volume). Deixe vazio para desligar. |
 
 SQLITE_PATH é opcional; padrão ./data/scanner.sqlite. Não configure DATABASE_URL, DATABASE_SSL ou certificado: esta versão não usa essas opções. Variáveis antigas de PostgreSQL são ignoradas e podem ser removidas. Não existe senha padrão embutida.
 

@@ -1,5 +1,6 @@
 import { Worker } from "node:worker_threads";
-import { config, symbols } from "./config.js";
+import { config, isFx, symbols } from "./config.js";
+import { yahooHistory } from "./fx.js";
 import { log } from "./log.js";
 import type { RestClient } from "./market.js";
 import { STRATEGY_HORIZONS, type Candle, type Horizon } from "./types.js";
@@ -119,14 +120,18 @@ export class StrategyLab {
     const now = this.rest.now(),
       from = now - config.STRATEGY_DAYS * 86400000,
       errors: string[] = [];
-    for (const [name, load] of [
-      ["Binance", this.binance],
-      ["Bybit", bybit],
-      ["OKX", okx],
-    ] as const) {
+    const loaders = isFx(symbol)
+      ? ([["Yahoo Finance", yahooHistory]] as const)
+      : ([
+          ["Binance", this.binance],
+          ["Bybit", bybit],
+          ["OKX", okx],
+        ] as const);
+    for (const [name, load] of loaders) {
       try {
+        // Forex is refetched whole: its gap-filled history cannot be stitched.
         const kept =
-          this.sources[symbol] === name
+          !isFx(symbol) && this.sources[symbol] === name
             ? (this.history.get(symbol) || []).filter((c) => c.t >= from)
             : [];
         const since = kept.length ? kept[kept.length - 1].t + 60000 : from;
@@ -192,7 +197,15 @@ export class StrategyLab {
       let from = Infinity,
         to = 0;
       for (const symbol of symbols) {
-        const cs = await this.fetch(symbol);
+        let cs: Candle[];
+        try {
+          cs = await this.fetch(symbol);
+        } catch (e) {
+          // A missing Forex source never blocks the crypto backtest.
+          if (!isFx(symbol)) throw e;
+          log.warn({ symbol, err: e }, "forex sem histórico");
+          continue;
+        }
         from = Math.min(from, cs[0].t);
         to = Math.max(to, cs[cs.length - 1].end);
         this.status = `BACKTEST EM ANDAMENTO (${symbol})`;

@@ -1,4 +1,4 @@
-import { config } from "./config.js";
+import { config, staleMs } from "./config.js";
 import { log } from "./log.js";
 import type { SQLiteConnection } from "./database.js";
 import type { StrategyLab } from "./lab.js";
@@ -227,7 +227,7 @@ export class Robot {
         const q = priceOf(symbol),
           at = this.clock();
         // The opportunity is only valid right after the candle closed.
-        if (!q || at - last.end > 45000 || at - q.t > config.STALE_MS) return;
+        if (!q || at - last.end > 45000 || at - q.t > staleMs(symbol)) return;
         if (this.open.some((t) => t.symbol === symbol)) return;
         this.save(
           newTrade(

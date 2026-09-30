@@ -1,7 +1,8 @@
 import WebSocket from "ws";
 import { websocketAgent } from "./network.js";
 import { EventEmitter } from "node:events";
-import { config, symbols } from "./config.js";
+import { config, isFx, staleMs, symbols } from "./config.js";
+import { combine, fillGaps, yahooChart } from "./fx.js";
 import { INTERVALS, type Candle, type MarketState, type TF } from "./types.js";
 import { log } from "./log.js";
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -76,21 +77,21 @@ export function feedReasons(
   now: number,
   clockOk: boolean,
 ): string[] {
-  const r: string[] = [];
+  const r: string[] = [],
+    stale = staleMs(s.symbol);
   if (!s.connected) r.push("WEBSOCKET DESCONECTADO");
   if (!s.ready) r.push("HISTÓRICO NÃO CARREGADO");
   if (s.error) r.push(s.error);
   if (!clockOk) r.push("RELÓGIO NÃO SINCRONIZADO");
   if (
     !s.trade ||
-    now - s.trade.t > config.STALE_MS ||
-    now - s.trade.received > config.STALE_MS ||
+    now - s.trade.t > stale ||
+    now - s.trade.received > stale ||
     s.trade.t > now
   )
     r.push("TRADES ATRASADOS / TIMESTAMP INCONSISTENTE");
-  if (!s.quote || now - s.quote.t > config.STALE_MS) r.push("BID/ASK ATRASADO");
-  if (!s.book || now - s.book.t > config.STALE_MS)
-    r.push("LIVRO PARCIAL ATRASADO");
+  if (!s.quote || now - s.quote.t > stale) r.push("BID/ASK ATRASADO");
+  if (!s.book || now - s.book.t > stale) r.push("LIVRO PARCIAL ATRASADO");
   if (now - s.connectedAt < 60000) r.push("AQUECENDO MICROESTRUTURA (60s)");
   for (const [tf, ms] of Object.entries(INTERVALS) as [TF, number][]) {
     const a = s.candles[tf];
@@ -99,7 +100,7 @@ export function feedReasons(
     if (
       !a.length ||
       now - a[a.length - 1].end > ms + 5000 ||
-      now - (s.lastKline[tf] || 0) > config.STALE_MS
+      now - (s.lastKline[tf] || 0) > stale
     )
       r.push(`CANDLES ${tf} ATRASADOS`);
   }
@@ -140,7 +141,10 @@ export class MarketData extends EventEmitter {
     } catch (e) {
       log.error({ err: e }, "clock sync");
     }
-    for (const s of this.states.values()) this.connect(s, 0);
+    let fx = 0;
+    for (const s of this.states.values())
+      if (isFx(s.symbol)) this.pollFx(s, fx++ * 900);
+      else this.connect(s, 0);
     this.syncTimer = setInterval(
       () =>
         void this.rest.sync().catch((e) => {
@@ -404,6 +408,120 @@ export class MarketData extends EventEmitter {
         this.emit("candles", s.symbol, tf, [c]);
       }
     }
+  }
+  // Forex: Yahoo Finance is polled; the state mimics a feed without volume or book.
+  private pollFx(s: MarketState, wait: number) {
+    const timer = setTimeout(async () => {
+      this.timers.delete(timer);
+      if (this.stopped) return;
+      try {
+        if (!s.ready) {
+          await this.bootstrapFx(s);
+          s.connected = true;
+          s.connectedAt = this.rest.now();
+          s.ready = true;
+          log.info({ symbol: s.symbol }, "forex pronto");
+        }
+        await this.tickFx(s);
+        s.error = null;
+      } catch (e) {
+        s.error = "ERRO NA FONTE FOREX";
+        log.warn({ err: e, symbol: s.symbol }, "forex");
+      }
+      this.pollFx(s, config.FX_POLL_MS);
+    }, wait);
+    this.timers.add(timer);
+  }
+  private async bootstrapFx(s: MarketState) {
+    const now = this.rest.now(),
+      back = { "1m": 3, "5m": 8, "15m": 20, "1h": 70 } as Record<TF, number>;
+    for (const tf of Object.keys(INTERVALS) as TF[]) {
+      const ms = INTERVALS[tf],
+        { bars } = await yahooChart(
+          s.symbol,
+          tf,
+          now - back[tf] * 86400000,
+          now,
+        );
+      const closed = fillGaps(
+        bars.filter((c) => c.end < now),
+        ms,
+      ).slice(-1500);
+      if (closed.length < 250) throw Error(`Forex ${tf}: só ${closed.length}`);
+      s.candles[tf] = closed;
+      s.lastKline[tf] = now;
+      this.emit("candles", s.symbol, tf, closed);
+    }
+  }
+  private async tickFx(s: MarketState) {
+    const now = this.rest.now(),
+      { price, bars } = await yahooChart(s.symbol, "1m", now - 20 * 60000, now),
+      last = bars[bars.length - 1];
+    if (!last) throw Error("Forex sem candles recentes");
+    const closed = bars.filter((c) => c.end < now),
+      prev = s.candles["1m"];
+    const fresh = fillGaps(
+      [...prev.slice(-1), ...closed.filter((c) => c.t > (prev.at(-1)?.t ?? 0))],
+      60000,
+    ).slice(prev.length ? 1 : 0);
+    for (const c of fresh) s.candles["1m"] = putCandle(s.candles["1m"], c);
+    if (fresh.length) this.emit("candles", s.symbol, "1m", fresh);
+    // Higher timeframes are built from the 1m bars once their window has closed.
+    for (const tf of ["5m", "15m", "1h"] as TF[]) {
+      const ms = INTERVALS[tf],
+        a = s.candles[tf];
+      for (
+        let t = (a.at(-1)?.t ?? Math.floor(now / ms) * ms - ms) + ms;
+        t + ms - 1 < now;
+        t += ms
+      ) {
+        const c =
+          combine(
+            s.candles["1m"].filter((b) => b.t >= t && b.t < t + ms),
+            t,
+            ms,
+          ) ??
+          combine(
+            [{ ...a.at(-1)!, o: a.at(-1)!.c, h: a.at(-1)!.c, l: a.at(-1)!.c }],
+            t,
+            ms,
+          );
+        if (!c) break;
+        s.candles[tf] = putCandle(s.candles[tf], c);
+        this.emit("candles", s.symbol, tf, [c]);
+      }
+      s.lastKline[tf] = now;
+    }
+    s.lastKline["1m"] = now;
+    // A stale quote (market closed) keeps its own timestamp so the feed shows as late.
+    const p = price ?? last.c,
+      at = last.t >= now - 3 * 60000 ? now : last.end;
+    if (last.end >= now) {
+      s.forming = {
+        ...last,
+        c: p,
+        h: Math.max(last.h, p),
+        l: Math.min(last.l, p),
+      };
+      s.formingAt = now;
+    }
+    s.trade = {
+      id: (s.trade?.id ?? 0) + 1,
+      t: at,
+      received: at,
+      p,
+      q: 0,
+      buy: true,
+    };
+    s.quote = { t: at, bid: p, ask: p };
+    s.book = {
+      t: at,
+      id: (s.book?.id ?? 0) + 1,
+      bidQty: 1,
+      askQty: 1,
+      imbalance: 0,
+      change: 0,
+    };
   }
   stop() {
     this.stopped = true;

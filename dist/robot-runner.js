@@ -1,4 +1,4 @@
-import { config } from "./config.js";
+import { config, staleMs } from "./config.js";
 import { log } from "./log.js";
 import { ROBOT_DEFAULT_HORIZONS, STRATEGY_HORIZONS, } from "./types.js";
 import { RobotAI } from "./robot-ai.js";
@@ -185,7 +185,7 @@ export class Robot {
                 }
                 const q = priceOf(symbol), at = this.clock();
                 // The opportunity is only valid right after the candle closed.
-                if (!q || at - last.end > 45000 || at - q.t > config.STALE_MS)
+                if (!q || at - last.end > 45000 || at - q.t > staleMs(symbol))
                     return;
                 if (this.open.some((t) => t.symbol === symbol))
                     return;

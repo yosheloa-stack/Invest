@@ -1,5 +1,6 @@
 import { Worker } from "node:worker_threads";
-import { config, symbols } from "./config.js";
+import { config, isFx, symbols } from "./config.js";
+import { yahooHistory } from "./fx.js";
 import { log } from "./log.js";
 import { STRATEGY_HORIZONS } from "./types.js";
 import { buildSeries, catalog, } from "./strategies.js";
@@ -99,13 +100,17 @@ export class StrategyLab {
     // Alternative exchanges remain available for research, never approval of Binance signals.
     async fetch(symbol) {
         const now = this.rest.now(), from = now - config.STRATEGY_DAYS * 86400000, errors = [];
-        for (const [name, load] of [
-            ["Binance", this.binance],
-            ["Bybit", bybit],
-            ["OKX", okx],
-        ]) {
+        const loaders = isFx(symbol)
+            ? [["Yahoo Finance", yahooHistory]]
+            : [
+                ["Binance", this.binance],
+                ["Bybit", bybit],
+                ["OKX", okx],
+            ];
+        for (const [name, load] of loaders) {
             try {
-                const kept = this.sources[symbol] === name
+                // Forex is refetched whole: its gap-filled history cannot be stitched.
+                const kept = !isFx(symbol) && this.sources[symbol] === name
                     ? (this.history.get(symbol) || []).filter((c) => c.t >= from)
                     : [];
                 const since = kept.length ? kept[kept.length - 1].t + 60000 : from;
@@ -167,7 +172,17 @@ export class StrategyLab {
             const all = [];
             let from = Infinity, to = 0;
             for (const symbol of symbols) {
-                const cs = await this.fetch(symbol);
+                let cs;
+                try {
+                    cs = await this.fetch(symbol);
+                }
+                catch (e) {
+                    // A missing Forex source never blocks the crypto backtest.
+                    if (!isFx(symbol))
+                        throw e;
+                    log.warn({ symbol, err: e }, "forex sem histórico");
+                    continue;
+                }
                 from = Math.min(from, cs[0].t);
                 to = Math.max(to, cs[cs.length - 1].end);
                 this.status = `BACKTEST EM ANDAMENTO (${symbol})`;

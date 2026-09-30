@@ -2,7 +2,7 @@ export const pct = (n: number | null | undefined, digits = 1) =>
   n == null ? "—" : `${(n * 100).toFixed(digits).replace(".", ",")}%`;
 export const price = (n: number | null | undefined) => {
   if (n == null) return "—";
-  const digits = n >= 1000 ? 2 : n >= 10 ? 3 : n >= 1 ? 4 : 5;
+  const digits = n >= 1000 ? 2 : n >= 10 ? 3 : 5;
   return n.toLocaleString("pt-BR", {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
@@ -19,9 +19,17 @@ export const countdown = (ms: number) => {
   return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 };
 // Preserve the actual quote asset. EUR/USDT is not Forex EUR/USD.
-export const pair = (symbol: string) => symbol.replace(/USDT$/, "/USDT");
+export const isFx = (symbol: string) => /^[A-Z]{6}$/.test(symbol);
+export const pair = (symbol: string) =>
+  isFx(symbol)
+    ? `${symbol.slice(0, 3)}/${symbol.slice(3)}`
+    : symbol.replace(/USDT$/, "/USDT");
 export const ticker = (symbol: string) =>
-  symbol === "EURUSDT" ? "EUR/USDT" : symbol.replace("USDT", "");
+  isFx(symbol)
+    ? pair(symbol)
+    : symbol === "EURUSDT"
+      ? "EUR/USDT"
+      : symbol.replace("USDT", "");
 export const COIN_NAMES: Record<string, string> = {
   BTCUSDT: "Bitcoin",
   ETHUSDT: "Ethereum",
@@ -34,6 +42,15 @@ export const COIN_NAMES: Record<string, string> = {
   LTCUSDT: "Litecoin",
   LINKUSDT: "Chainlink",
   EURUSDT: "Euro / Tether · Binance spot",
+  EURUSD: "Euro / Dólar",
+  GBPUSD: "Libra / Dólar",
+  USDJPY: "Dólar / Iene",
+  AUDUSD: "Dólar australiano / Dólar",
+  USDCAD: "Dólar / Dólar canadense",
+  USDCHF: "Dólar / Franco suíço",
+  EURJPY: "Euro / Iene",
+  EURGBP: "Euro / Libra",
+  NZDUSD: "Dólar neozelandês / Dólar",
 };
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(path, {

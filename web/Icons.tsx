@@ -9,6 +9,11 @@ import avax from "cryptocurrency-icons/svg/color/avax.svg";
 import ltc from "cryptocurrency-icons/svg/color/ltc.svg";
 import link from "cryptocurrency-icons/svg/color/link.svg";
 import eur from "cryptocurrency-icons/svg/color/eur.svg";
+import gbp from "cryptocurrency-icons/svg/color/gbp.svg";
+import jpy from "cryptocurrency-icons/svg/color/jpy.svg";
+import usd from "cryptocurrency-icons/svg/color/usd.svg";
+// Forex pairs show the base currency's mark.
+const FIAT: Record<string, string> = { EUR: eur, GBP: gbp, JPY: jpy, USD: usd };
 // Official coin marks (cryptocurrency-icons, CC0).
 const COINS: Record<string, string> = {
   BTCUSDT: btc,
@@ -30,7 +35,9 @@ export function CoinIcon({
   symbol: string;
   size?: number;
 }) {
-  const src = COINS[symbol];
+  const src =
+    COINS[symbol] ??
+    (/^[A-Z]{6}$/.test(symbol) ? FIAT[symbol.slice(0, 3)] : undefined);
   if (!src)
     return (
       <span className="coin coin-blank" style={{ width: size, height: size }}>

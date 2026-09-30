@@ -64,17 +64,35 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.string().trim().default(""),
   ROBOT_AI_MODEL: z.string().trim().default("claude-opus-5"),
   ROBOT_AI_MAX_PER_HOUR: z.coerce.number().int().min(0).default(30),
+  // Forex pairs (Yahoo Finance, polled; no volume). Empty disables Forex.
+  FOREX_SYMBOLS: z
+    .string()
+    .default("EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF,EURJPY,EURGBP,NZDUSD"),
+  FX_POLL_MS: z.coerce.number().int().min(2000).default(8000),
+  FX_STALE_MS: z.coerce.number().int().min(5000).default(30000),
 });
 export const config = schema.parse(process.env);
-export const symbols = config.SYMBOLS.split(",").map((x) =>
-  x.trim().toUpperCase(),
-);
+const crypto = config.SYMBOLS.split(",").map((x) => x.trim().toUpperCase());
 if (
-  !symbols.length ||
-  symbols.some((x) => !/^([A-Z0-9]{2,15})USDT$/.test(x)) ||
-  new Set(symbols).size !== symbols.length
+  !crypto.length ||
+  crypto.some((x) => !/^([A-Z0-9]{2,15})USDT$/.test(x)) ||
+  new Set(crypto).size !== crypto.length
 )
   throw Error("SYMBOLS inválidos ou duplicados");
+export const fxSymbols = config.FOREX_SYMBOLS.split(",")
+  .map((x) => x.trim().toUpperCase())
+  .filter(Boolean);
+if (
+  fxSymbols.some((x) => !/^[A-Z]{6}$/.test(x) || crypto.includes(x)) ||
+  new Set(fxSymbols).size !== fxSymbols.length
+)
+  throw Error("FOREX_SYMBOLS inválidos ou duplicados");
+// Crypto first, then Forex pairs.
+export const symbols = [...crypto, ...fxSymbols];
+export const isFx = (symbol: string) => fxSymbols.includes(symbol);
+// Forex prices are polled, so they are allowed to be older than exchange trades.
+export const staleMs = (symbol: string) =>
+  isFx(symbol) ? config.FX_STALE_MS : config.STALE_MS;
 export const weights = z
   .record(z.number().min(0).max(10))
   .parse(JSON.parse(config.GROUP_WEIGHTS));

@@ -10,7 +10,7 @@ import { mountAuth } from "./web-auth.js";
 import { Accounts } from "./accounts.js";
 import { createServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
-import { config } from "./config.js";
+import { config, staleMs } from "./config.js";
 import { log } from "./log.js";
 import { MarketData, freezeMarketState } from "./market.js";
 import { Store } from "./store.js";
@@ -311,9 +311,9 @@ function liveTicks() {
     for (const s of market.states.values()) {
         const now = market.rest.now();
         const tradeFresh = s.trade &&
-            now - s.trade.received <= config.STALE_MS &&
-            now - s.trade.t <= config.STALE_MS;
-        const candleFresh = s.forming && now - (s.formingAt ?? 0) <= config.STALE_MS;
+            now - s.trade.received <= staleMs(s.symbol) &&
+            now - s.trade.t <= staleMs(s.symbol);
+        const candleFresh = s.forming && now - (s.formingAt ?? 0) <= staleMs(s.symbol);
         if (!tradeFresh && !candleFresh)
             continue;
         const b = liveCandle(s);
