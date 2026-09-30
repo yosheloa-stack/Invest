@@ -264,45 +264,6 @@ function priceOf(symbol: string) {
   if (!s?.trade || market.reasons(s).length) return null;
   return { p: s.trade.p, t: s.trade.t };
 }
-// Read-only probe: which public hosts the Ebinex web app loads its prices from.
-// Fetches only the public page and its scripts; never logs in or sends anything.
-app.get("/api/ebinex/probe", auth.requireAdmin, async (_req, res) => {
-  const get = async (url: string) => {
-    const r = await fetch(url, {
-      headers: { "user-agent": "Mozilla/5.0", accept: "*/*" },
-      signal: AbortSignal.timeout(15000),
-    });
-    return { status: r.status, text: await r.text() };
-  };
-  try {
-    const base = "https://app.ebinex.com/",
-      page = await get(base),
-      scripts = [...page.text.matchAll(/<script[^>]+src="([^"]+)"/g)].map(
-        (m) => new URL(m[1], base).href,
-      );
-    const hosts = new Set<string>(),
-      hints = new Set<string>();
-    for (const src of scripts.slice(0, 12)) {
-      const js = (await get(src).catch(() => ({ text: "" }))).text;
-      for (const m of js.matchAll(
-        /(wss?:\/\/[a-zA-Z0-9.\-_:/]+|https:\/\/[a-zA-Z0-9.\-]*ebinex[a-zA-Z0-9.\-]*[a-zA-Z0-9.\-_/]*)/g,
-      ))
-        hosts.add(m[1].slice(0, 120));
-      for (const m of js.matchAll(
-        /["'`]([a-zA-Z_/.-]*(?:candle|ticker|quote|price|kline|asset|socket)[a-zA-Z_/.-]*)["'`]/gi,
-      ))
-        if (m[1].length < 60) hints.add(m[1]);
-    }
-    res.json({
-      page: page.status,
-      scripts,
-      hosts: [...hosts].slice(0, 80),
-      hints: [...hints].slice(0, 120),
-    });
-  } catch (e) {
-    res.status(502).json({ error: e instanceof Error ? e.message : String(e) });
-  }
-});
 app.get("/api/robot", (_req, res) => {
   if (!robot) return void res.status(503).json({ error: "Robô iniciando" });
   res.json(robot.summary());
