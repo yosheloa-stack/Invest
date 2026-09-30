@@ -1,5 +1,7 @@
 import SignalHistory from "./SignalHistory";
 import OperationPlan from "./OperationPlan";
+import { PatternPanel, RadarPanel } from "./Radar";
+import { Radar as RadarIcon } from "lucide-react";
 import { useChartFullscreen } from "./useChartFullscreen";
 import "./style.css";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
@@ -347,7 +349,7 @@ function TickerTape({
     </div>
   );
 }
-type SideTab = "robot" | "strat" | "list" | "map" | "news";
+type SideTab = "robot" | "radar" | "strat" | "list" | "map" | "news";
 function SymbolPicker({
   state,
   selected,
@@ -519,6 +521,7 @@ function TradeView({
       .slice(0, 6);
   const SIDE: { id: SideTab; label: string; icon: typeof Activity }[] = [
     { id: "robot", label: "Robô", icon: Bot },
+    { id: "radar", label: "Radar", icon: RadarIcon },
     { id: "strat", label: "Estratégias", icon: BrainCircuit },
     { id: "list", label: "Ativos", icon: List },
     { id: "map", label: "Mapa 3D", icon: Box },
@@ -543,6 +546,10 @@ function TradeView({
           robotTrades={robotTrades}
           robotStudies={robotUses}
           robotLevels={robotLevels}
+          patternLevels={
+            robotView?.patterns?.charts.find((p) => p.status === "formando") ??
+            null
+          }
           signals={state.signals.filter((s) => s.symbol === asset.symbol)}
           head={
             <SymbolPicker
@@ -553,6 +560,7 @@ function TradeView({
           }
         />
         <RobotLive symbol={asset.symbol} data={robotView} now={now} />
+        <PatternPanel patterns={robotView?.patterns} />
         <OperationPlan
           asset={asset}
           signals={state.signals}
@@ -619,6 +627,7 @@ function TradeView({
               onOpen={onOpen}
             />
           )}
+          {side === "radar" && <RadarPanel onSelect={onSelect} now={now} />}
           {side === "list" && (
             <Watchlist state={state} selected={selected} onSelect={onSelect} />
           )}

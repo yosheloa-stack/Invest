@@ -9,6 +9,7 @@ import {
   newTrade,
   liveKey,
   losingSpot,
+  moneyPlan,
 } from "../src/robot.js";
 import type { Candle } from "../src/types.js";
 function trendUp(n: number): Candle[] {
@@ -242,4 +243,42 @@ test("robot stops on an asset where its own record loses", () => {
     losingSpot(trades.slice(0, 10), "TESTUSDT", 0, 1 / 1.9, 15),
     null,
   );
+});
+test("gestão: Soros adds the last win's profit and resets after the cycle", () => {
+  const cs = firing();
+  const r = readMarket("TESTUSDT", cs, evals(0.6), new Map(), opts)!;
+  const base = {
+    ...newTrade(r, r.pick!, 100, 0, 10, 0.9, null),
+    direction: "COMPRA" as const,
+  };
+  const day = Date.UTC(2026, 8, 30, 15);
+  const closeAt = (k: number, exit: number, stake = 10) =>
+    settleTrade(
+      { ...base, id: String(k), stake, openedAt: day + k * 60000 },
+      exit,
+      day + k * 60000 + 300000,
+    );
+  const rules = {
+    mode: "fixo" as const,
+    value: 10,
+    soros: 1,
+    stopWin: 0,
+    stopLoss: 0,
+  };
+  assert.equal(moneyPlan([], rules, 1000, day).stake, 10);
+  const oneWin = [closeAt(1, 101)];
+  assert.equal(moneyPlan(oneWin, rules, 1000, day).stake, 19);
+  const twoWins = [closeAt(2, 101, 19), ...oneWin];
+  assert.equal(moneyPlan(twoWins, rules, 1000, day).stake, 10);
+  const loss = [closeAt(3, 99), ...oneWin];
+  assert.equal(moneyPlan(loss, rules, 1000, day).stake, 10);
+  const pct = moneyPlan([], { ...rules, mode: "percent", value: 2 }, 1000, day);
+  assert.equal(pct.stake, 20);
+  const stop = moneyPlan(
+    [closeAt(4, 99), closeAt(5, 99), closeAt(6, 99)],
+    { ...rules, stopLoss: 2 },
+    1000,
+    day,
+  );
+  assert.match(stop.stop ?? "", /Stop loss/);
 });

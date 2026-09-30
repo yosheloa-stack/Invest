@@ -13,6 +13,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { CoinIcon } from "./Icons";
+import { MoneySettings } from "./Radar";
 import { beep, unlockAudio } from "./SignalDock";
 import { STUDIES, studiesFor, type Study } from "./studies";
 import { liveBar, useTicks } from "./live";
@@ -28,6 +29,7 @@ import {
 } from "./format";
 import type {
   MarketRead,
+  PatternHit,
   RobotBrief,
   RobotSummary,
   RobotTrade,
@@ -285,6 +287,18 @@ export function RobotSide({
           {LEVELS.find((l) => l.id === level)?.text}
         </small>
       </div>
+      <MoneySettings
+        money={brief?.money}
+        plan={brief?.plan}
+        admin={admin}
+        onSave={async (m) => {
+          await api("/api/robot/settings", {
+            method: "POST",
+            body: JSON.stringify({ money: m }),
+          }).catch(() => undefined);
+          await reload();
+        }}
+      />
       <button className={`rb-sound ${sound ? "on" : ""}`} onClick={flipSound}>
         {sound ? <Volume2 size={15} /> : <VolumeX size={15} />}
         {sound ? "Som de compra e venda ligado" : "Som desligado"}
@@ -507,6 +521,7 @@ export type RobotRead = {
   horizons: number[];
   level?: RobotBrief["level"];
   read: MarketRead | null;
+  patterns?: { candles: PatternHit[]; charts: PatternHit[] };
   trades: RobotTrade[];
 };
 // Live reading of the chart's asset; refreshes on every pair change and every 15s.

@@ -2,7 +2,7 @@ import { config, staleMs } from "./config.js";
 import { log } from "./log.js";
 import { ROBOT_DEFAULT_HORIZONS, STRATEGY_HORIZONS, } from "./types.js";
 import { RobotAI } from "./robot-ai.js";
-import { liveKey, losingSpot, newTrade, readMarket, robotStats, settleTrade, robotPerformance, } from "./robot.js";
+import { DEFAULT_MONEY, moneyPlan, validMoney, liveKey, losingSpot, newTrade, readMarket, robotStats, settleTrade, robotPerformance, } from "./robot.js";
 export const ROBOT_LEVELS = ["alta", "media", "baixa"];
 // Runs the simulated operator: one open trade per asset, settles at expiry from the live price.
 export class Robot {
@@ -14,6 +14,8 @@ export class Robot {
     horizons = [...ROBOT_DEFAULT_HORIZONS];
     // How good a trigger's history must be to enter; chosen on the chart screen.
     level = "media";
+    // Gestão de banca chosen on the chart screen.
+    money = DEFAULT_MONEY(config.ROBOT_STAKE);
     trades = [];
     reads = new Map();
     status = "AGUARDANDO HISTÓRICO DO LABORATÓRIO";
@@ -56,6 +58,13 @@ export class Robot {
             this.horizons = [...ROBOT_DEFAULT_HORIZONS];
         this.db.query("INSERT INTO robot_settings(key,value) VALUES('horizons',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify(this.horizons)]);
     }
+    setMoney(x) {
+        this.money = validMoney(x, this.money);
+        this.db.query("INSERT INTO robot_settings(key,value) VALUES('money',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify(this.money)]);
+    }
+    plan(now = this.clock()) {
+        return moneyPlan(this.trades, this.money, config.ROBOT_BANKROLL, now);
+    }
     setEnabled(on) {
         this.enabled = on;
         this.status = on ? "PROCURANDO OPORTUNIDADE" : "PAUSADO";
@@ -70,6 +79,8 @@ export class Robot {
                     this.horizons = STRATEGY_HORIZONS.filter((h) => v.includes(h));
                 if (r.key === "enabled" && typeof v === "boolean")
                     this.enabled = v;
+                if (r.key === "money")
+                    this.money = validMoney(v, this.money);
                 if (r.key === "level" &&
                     ROBOT_LEVELS.includes(v))
                     this.level = v;
@@ -176,6 +187,17 @@ export class Robot {
             this.open.some((t) => t.symbol === symbol) ||
             this.open.length + this.busy.size >= config.ROBOT_MAX_OPEN)
             return;
+        const plan = this.plan(now);
+        if (plan.stop) {
+            this.status = plan.stop.toUpperCase();
+            this.reads.set(symbol, {
+                ...read,
+                pick: null,
+                why: plan.stop,
+                lines: [...read.lines.slice(0, -1), plan.stop],
+            });
+            return;
+        }
         const losing = losingSpot(this.trades, symbol, now, this.breakEven, config.ROBOT_CUT_MIN_TRADES);
         if (losing) {
             this.reads.set(symbol, {
@@ -207,9 +229,10 @@ export class Robot {
                 if (!q || at - last.end > 45000 || at - q.t > staleMs(symbol))
                     return;
                 if (this.open.some((t) => t.symbol === symbol) ||
-                    this.open.length >= config.ROBOT_MAX_OPEN)
+                    this.open.length >= config.ROBOT_MAX_OPEN ||
+                    this.plan(at).stop)
                     return;
-                this.save(newTrade(read, pick, q.p, at, config.ROBOT_STAKE, config.PAYOUT, review
+                this.save(newTrade(read, pick, q.p, at, this.plan(at).stake || config.ROBOT_STAKE, config.PAYOUT, review
                     ? {
                         model: this.ai.model,
                         confidence: review.confidence,
@@ -230,6 +253,8 @@ export class Robot {
             enabled: this.enabled,
             horizons: this.horizons,
             level: this.level,
+            money: this.money,
+            plan: this.plan(),
             minScore: this.options().minScore,
             status: this.status,
             stats: robotStats(this.trades, config.ROBOT_BANKROLL),

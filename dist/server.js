@@ -22,6 +22,8 @@ import { StrategyLab } from "./lab.js";
 import { ROBOT_LEVELS, Robot } from "./robot-runner.js";
 import { HORIZONS, } from "./types.js";
 import { technical } from "./indicators.js";
+import { readPatterns } from "./patterns.js";
+import { radarFor } from "./radar.js";
 const store = new Store(), market = new MarketData(), news = new NewsIntelligenceEngine(store), models = new ModelRegistry(), lab = new StrategyLab(market.rest);
 const app = express();
 app.disable("x-powered-by");
@@ -205,6 +207,28 @@ app.get("/api/news", (_req, res) => res.json({
     categories: newsCategories,
 }));
 app.get("/api/strategies", (_req, res) => res.json(lab.summary()));
+// Patterns and "quase entrando" items per asset, refreshed on every closed candle.
+const patterns = new Map();
+const radar = new Map(), scanned = new Map();
+function scanPatterns(symbol, closed) {
+    const lastT = closed.at(-1)?.t ?? 0;
+    if (scanned.get(symbol) === lastT)
+        return;
+    scanned.set(symbol, lastT);
+    const p = readPatterns(closed);
+    patterns.set(symbol, p);
+    radar.set(symbol, radarFor(symbol, robot?.reads.get(symbol), p, closed.at(-1)?.end ?? 0));
+}
+app.get("/api/radar", (_req, res) => {
+    res.json({
+        items: [...radar.values()]
+            .flat()
+            // Only what came from the last few closed candles; a stale feed drops out.
+            .filter((i) => Date.now() - i.t < 3 * 60000)
+            .sort((a, b) => b.score - a.score || b.t - a.t)
+            .slice(0, 40),
+    });
+});
 function closedCandles(symbol) {
     const s = market.states.get(symbol), now = market.rest.now();
     return s ? s.candles["1m"].filter((c) => c.end < now) : [];
@@ -242,7 +266,14 @@ app.post("/api/robot/settings", express.json({ limit: "1kb" }), auth.requireAdmi
         robot.setHorizons(req.body.horizons.map(Number));
     if (ROBOT_LEVELS.includes(req.body?.level))
         robot.setLevel(req.body.level);
-    res.json({ horizons: robot.horizons, level: robot.level });
+    if (req.body?.money && typeof req.body.money === "object")
+        robot.setMoney(req.body.money);
+    res.json({
+        horizons: robot.horizons,
+        level: robot.level,
+        money: robot.money,
+        plan: robot.plan(),
+    });
 });
 // Live reading of one asset for the chart screen (rules only, no AI budget spent).
 app.get("/api/robot/read/:symbol", (req, res) => {
@@ -258,6 +289,7 @@ app.get("/api/robot/read/:symbol", (req, res) => {
         labReady: lab.evaluations.length > 0,
         labStatus: lab.status,
         read,
+        patterns: patterns.get(symbol) ?? { candles: [], charts: [] },
         trades: robot.trades.filter((t) => t.symbol === symbol).slice(0, 20),
     });
 });
@@ -520,8 +552,11 @@ async function tick() {
         if (robot && store.healthy) {
             robot.settle(market.rest.now(), priceOf, candleAt);
             for (const s of cycle)
-                if (!market.reasons(s).length)
-                    robot.onCandle(s.symbol, s.candles["1m"].filter((c) => c.end < now), priceOf, market.rest.now());
+                if (!market.reasons(s).length) {
+                    const closed = s.candles["1m"].filter((c) => c.end < now);
+                    robot.onCandle(s.symbol, closed, priceOf, market.rest.now());
+                    scanPatterns(s.symbol, closed);
+                }
         }
         if (signalsChanged)
             stats = await store.stats();

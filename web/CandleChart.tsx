@@ -39,7 +39,13 @@ import {
   type Bar,
   type Study,
 } from "./studies";
-import type { CandleData, Evaluation, RobotTrade, Signal } from "./types";
+import type {
+  CandleData,
+  Evaluation,
+  PatternHit,
+  RobotTrade,
+  Signal,
+} from "./types";
 import { PALETTE, useTheme, type Palette } from "./theme";
 const FRAMES = [1, 5, 10, 15] as const;
 export type Frame = (typeof FRAMES)[number];
@@ -110,7 +116,10 @@ export default function CandleChart({
   robotTrades = [],
   robotStudies = [],
   robotLevels,
+  patternLevels,
 }: {
+  // The chart pattern in play: breakout level, target and invalidation as price lines.
+  patternLevels?: PatternHit | null;
   robotTrades?: RobotTrade[];
   // Indicators the robot is reading on this pair; forced on so the user sees them.
   robotStudies?: Study[];
@@ -797,6 +806,43 @@ export default function CandleChart({
     add(robotLevels?.support, "Robô S", pal.current.up);
     add(robotLevels?.resistance, "Robô R", pal.current.down);
   }, [robotLevels?.support, robotLevels?.resistance, theme, data]);
+  const patternSr = useRef<IPriceLine[]>([]);
+  useEffect(() => {
+    const c = candles.current;
+    if (!c) return;
+    for (const l of patternSr.current) c.removePriceLine(l);
+    patternSr.current = [];
+    const p = patternLevels;
+    if (!p) return;
+    const color =
+      p.bias > 0
+        ? pal.current.up
+        : p.bias < 0
+          ? pal.current.down
+          : pal.current.muted;
+    const add = (v: number | null, title: string, style: LineStyle) =>
+      v != null &&
+      patternSr.current.push(
+        c.createPriceLine({
+          price: v,
+          color,
+          lineWidth: 2,
+          lineStyle: style,
+          axisLabelVisible: true,
+          title,
+        }),
+      );
+    add(p.level, `${p.name}: rompe`, LineStyle.Solid);
+    add(p.target, "Alvo", LineStyle.Dashed);
+    add(p.invalid, "Invalida", LineStyle.SparseDotted);
+  }, [
+    patternLevels?.id,
+    patternLevels?.level,
+    patternLevels?.target,
+    patternLevels?.invalid,
+    theme,
+    data,
+  ]);
   // Support/resistance of the visible timeframe as price lines, plus the market reading.
   useEffect(() => {
     const c = candles.current;

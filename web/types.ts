@@ -196,6 +196,8 @@ export type RobotBrief = {
   enabled: boolean;
   horizons: number[];
   level: "alta" | "media" | "baixa";
+  money?: MoneyRules;
+  plan?: MoneyPlan;
   minScore: number;
   status: string;
   stats: RobotStats;
@@ -259,3 +261,15 @@ export type CandleData = {
   signals: Signal[];
   triggers: Trigger[];
 };
+export type { MoneyRules } from "../src/robot";
+import type { MoneyRules } from "../src/robot";
+export type MoneyPlan = {
+  stake: number;
+  base: number;
+  sorosLevel: number;
+  balance: number;
+  today: number;
+  stop: string | null;
+};
+export type { PatternHit } from "../src/patterns";
+export type { RadarItem } from "../src/radar";

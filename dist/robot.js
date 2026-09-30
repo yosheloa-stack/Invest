@@ -92,7 +92,7 @@ export function readMarket(symbol, closed, evaluations, live, o) {
         g.score >= 0.5)
         .map((g) => g.id.split(":")[0])).size;
     const minAgree = o.minAgree ?? 1;
-    let pick = null, why;
+    let pick = null, near = null, why;
     if (!fired.length)
         why = "Nenhum gatilho disparou neste candle.";
     else if (fired.every((f) => f.against))
@@ -102,8 +102,16 @@ export function readMarket(symbol, closed, evaluations, live, o) {
         why = `Gatilho disparou, mas nenhum tem histórico acima do mínimo escolhido (${pctTxt(o.minScore)}).`;
     else if (eligible.some((f) => f.direction !== eligible[0].direction))
         why = "Gatilhos bons em direções opostas; o robô fica de fora.";
-    else if (agree(eligible[0]) < minAgree)
+    else if (agree(eligible[0]) < minAgree) {
         why = `Só ${agree(eligible[0])} estratégia confirma; o robô espera ${minAgree} concordando.`;
+        near = {
+            direction: eligible[0].direction,
+            horizon: eligible[0].horizon,
+            label: eligible[0].label,
+            have: agree(eligible[0]),
+            need: minAgree,
+        };
+    }
     else {
         pick = eligible[0];
         why = `Entrada em ${pick.direction === "COMPRA" ? "compra" : "venda"} com expiração de ${pick.horizon} min (${agree(pick)} estratégias concordam).`;
@@ -147,6 +155,7 @@ export function readMarket(symbol, closed, evaluations, live, o) {
         atrPct: Number.isFinite(atr) ? atr / price : null,
         fired,
         pick,
+        near,
         why,
         lines,
     };
@@ -275,5 +284,59 @@ export function robotPerformance(trades, breakEven) {
         byHorizon: grouped((t) => `${t.horizon} min`),
         byHour: grouped((t) => spHour(t.openedAt)),
         byStrategy: grouped((t) => t.strategy),
+    };
+}
+export const DEFAULT_MONEY = (stake) => ({
+    mode: "fixo",
+    value: stake,
+    soros: 0,
+    stopWin: 0,
+    stopLoss: 0,
+});
+export function validMoney(x, fallback) {
+    const m = (x ?? {}), num = (v, lo, hi, d) => typeof v === "number" && Number.isFinite(v)
+        ? Math.min(hi, Math.max(lo, v))
+        : d;
+    const mode = m.mode === "percent" || m.mode === "fixo" ? m.mode : fallback.mode;
+    return {
+        mode,
+        value: num(m.value, mode === "percent" ? 0.1 : 1, mode === "percent" ? 20 : 1e6, fallback.value),
+        soros: Math.round(num(m.soros, 0, 3, fallback.soros)),
+        stopWin: num(m.stopWin, 0, 100, fallback.stopWin),
+        stopLoss: num(m.stopLoss, 0, 100, fallback.stopLoss),
+    };
+}
+export function moneyPlan(trades, rules, bankroll, now) {
+    const done = trades
+        .filter((t) => t.status === "FECHADA")
+        .sort((a, b) => b.closedAt - a.closedAt), profit = done.reduce((a, t) => a + (t.profit ?? 0), 0), balance = bankroll + profit, day = spDay(now), today = done
+        .filter((t) => spDay(t.openedAt) === day)
+        .reduce((a, t) => a + (t.profit ?? 0), 0), dayStart = balance - today;
+    const base = rules.mode === "percent" ? (balance * rules.value) / 100 : rules.value;
+    // Wins in a row since the last loss (ties do not break or extend the run).
+    const wins = [];
+    for (const t of done) {
+        if (t.result === "EMPATE")
+            continue;
+        if (t.result !== "WIN")
+            break;
+        wins.push(t);
+    }
+    // Soros runs one trade at a time: while a trade is open, new entries use the base stake.
+    const busy = trades.some((t) => t.status === "ABERTA"), level = rules.soros && !busy ? wins.length % (rules.soros + 1) : 0, carried = wins.slice(0, level).reduce((a, t) => a + (t.profit ?? 0), 0), stake = Math.max(0, Math.min(balance, base + carried));
+    const stop = rules.stopWin && today >= (dayStart * rules.stopWin) / 100
+        ? `Meta do dia batida (+${today.toFixed(2)}); o robô para até amanhã.`
+        : rules.stopLoss && -today >= (dayStart * rules.stopLoss) / 100
+            ? `Stop loss do dia atingido (${today.toFixed(2)}); o robô para até amanhã.`
+            : balance <= 0
+                ? "Banca simulada zerada."
+                : null;
+    return {
+        stake: Math.round(stake * 100) / 100,
+        base: Math.round(base * 100) / 100,
+        sorosLevel: level,
+        balance,
+        today,
+        stop,
     };
 }

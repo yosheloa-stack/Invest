@@ -10,6 +10,10 @@ import {
 } from "./types.js";
 import { RobotAI } from "./robot-ai.js";
 import {
+  DEFAULT_MONEY,
+  moneyPlan,
+  validMoney,
+  type MoneyRules,
   liveKey,
   losingSpot,
   newTrade,
@@ -31,6 +35,8 @@ export class Robot {
   horizons: Horizon[] = [...ROBOT_DEFAULT_HORIZONS];
   // How good a trigger's history must be to enter; chosen on the chart screen.
   level: RobotLevel = "media";
+  // Gestão de banca chosen on the chart screen.
+  money: MoneyRules = DEFAULT_MONEY(config.ROBOT_STAKE);
   trades: RobotTrade[] = [];
   reads = new Map<string, MarketRead>();
   status = "AGUARDANDO HISTÓRICO DO LABORATÓRIO";
@@ -82,6 +88,16 @@ export class Robot {
       [JSON.stringify(this.horizons)],
     );
   }
+  setMoney(x: unknown) {
+    this.money = validMoney(x, this.money);
+    this.db.query(
+      "INSERT INTO robot_settings(key,value) VALUES('money',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",
+      [JSON.stringify(this.money)],
+    );
+  }
+  plan(now = this.clock()) {
+    return moneyPlan(this.trades, this.money, config.ROBOT_BANKROLL, now);
+  }
   setEnabled(on: boolean) {
     this.enabled = on;
     this.status = on ? "PROCURANDO OPORTUNIDADE" : "PAUSADO";
@@ -98,6 +114,7 @@ export class Robot {
         if (r.key === "horizons" && Array.isArray(v))
           this.horizons = STRATEGY_HORIZONS.filter((h) => v.includes(h));
         if (r.key === "enabled" && typeof v === "boolean") this.enabled = v;
+        if (r.key === "money") this.money = validMoney(v, this.money);
         if (
           r.key === "level" &&
           (ROBOT_LEVELS as readonly string[]).includes(v)
@@ -214,6 +231,17 @@ export class Robot {
       this.open.length + this.busy.size >= config.ROBOT_MAX_OPEN
     )
       return;
+    const plan = this.plan(now);
+    if (plan.stop) {
+      this.status = plan.stop.toUpperCase();
+      this.reads.set(symbol, {
+        ...read,
+        pick: null,
+        why: plan.stop,
+        lines: [...read.lines.slice(0, -1), plan.stop],
+      });
+      return;
+    }
     const losing = losingSpot(
       this.trades,
       symbol,
@@ -254,7 +282,8 @@ export class Robot {
         if (!q || at - last.end > 45000 || at - q.t > staleMs(symbol)) return;
         if (
           this.open.some((t) => t.symbol === symbol) ||
-          this.open.length >= config.ROBOT_MAX_OPEN
+          this.open.length >= config.ROBOT_MAX_OPEN ||
+          this.plan(at).stop
         )
           return;
         this.save(
@@ -263,7 +292,7 @@ export class Robot {
             pick,
             q.p,
             at,
-            config.ROBOT_STAKE,
+            this.plan(at).stake || config.ROBOT_STAKE,
             config.PAYOUT,
             review
               ? {
@@ -286,6 +315,8 @@ export class Robot {
       enabled: this.enabled,
       horizons: this.horizons,
       level: this.level,
+      money: this.money,
+      plan: this.plan(),
       minScore: this.options().minScore,
       status: this.status,
       stats: robotStats(this.trades, config.ROBOT_BANKROLL),

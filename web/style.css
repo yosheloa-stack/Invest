@@ -2743,3 +2743,150 @@ tr.ok td {
     font-size: 18px;
   }
 }
+/* Radar "quase entrando", patterns under the chart and gestão de banca. */
+.radar {
+  display: grid;
+  gap: 6px;
+}
+.radar-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 2px;
+}
+.radar-head .muted {
+  margin-left: auto;
+  font-size: 12px;
+}
+.radar-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-align: left;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.radar-item:hover {
+  background: var(--hover);
+}
+.radar-item.s4,
+.radar-item.s3 {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.radar-item.s2 {
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+.radar-text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.radar-text b {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.radar-text small {
+  color: var(--soft);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.patterns {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  margin-top: 8px;
+}
+.patterns h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.pattern {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--raised);
+  border-left: 3px solid var(--line-2);
+}
+.pattern.buy {
+  border-left-color: var(--up);
+}
+.pattern.sell {
+  border-left-color: var(--down);
+}
+.pattern p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--soft);
+  line-height: 1.45;
+}
+.pattern .pattern-action {
+  color: var(--text);
+}
+.pattern-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pattern-head .tag {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+.pattern-levels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.pattern-levels b {
+  color: var(--text);
+}
+.money-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.money-field {
+  display: grid;
+  gap: 2px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.money-field input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--text);
+  font-size: 13px;
+}
+.money-plan {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--soft);
+}
+.tv-tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tv-tabs button {
+  flex: 1 0 auto;
+  padding-inline: 6px;
+}
