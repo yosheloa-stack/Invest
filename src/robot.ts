@@ -139,7 +139,7 @@ export function readMarket(
     why: string;
   if (!fired.length) why = "Nenhum gatilho disparou neste candle.";
   else if (!eligible.length)
-    why = `Gatilho disparou, mas nenhum tem histórico acima do equilíbrio (${pctTxt(o.minScore)}).`;
+    why = `Gatilho disparou, mas nenhum tem histórico acima do mínimo escolhido (${pctTxt(o.minScore)}).`;
   else if (eligible.some((f) => f.direction !== eligible[0].direction))
     why = "Gatilhos bons em direções opostas; o robô fica de fora.";
   else {
@@ -168,6 +168,24 @@ export function readMarket(
   for (const f of fired.slice(0, 3))
     lines.push(
       `Gatilho: ${f.label} (${f.direction.toLowerCase()}, ${f.horizon} min) — ${f.backtestWinRate == null ? "sem histórico" : `acertou ${pctTxt(f.backtestWinRate)} em ${f.backtestTrades} testes`}${f.liveTrades ? `; no robô ${f.liveWins}/${f.liveTrades}` : ""}.`,
+    );
+  // How many of this pair's measured triggers are allowed to enter at the chosen strictness.
+  const armed = evaluations.filter(
+      (e) =>
+        e.symbol === symbol &&
+        (!o.horizons || o.horizons.includes(e.horizon)) &&
+        e.outOfSample.wins + e.outOfSample.losses >= o.minTrades &&
+        (e.outOfSample.wins + 1) /
+          (e.outOfSample.wins + e.outOfSample.losses + 2) >=
+          o.minScore,
+    ).length,
+    total = evaluations.filter(
+      (e) =>
+        e.symbol === symbol && (!o.horizons || o.horizons.includes(e.horizon)),
+    ).length;
+  if (total)
+    lines.push(
+      `Gatilhos liberados neste par: ${armed} de ${total} (histórico ≥ ${pctTxt(o.minScore)}).`,
     );
   lines.push(why);
   return {

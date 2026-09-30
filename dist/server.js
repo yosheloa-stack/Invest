@@ -19,7 +19,7 @@ import { ModelRegistry } from "./models.js";
 import { buildFeatures } from "./features.js";
 import { evaluate, advanceSignal, strategyDecision } from "./signals.js";
 import { StrategyLab } from "./lab.js";
-import { Robot } from "./robot-runner.js";
+import { ROBOT_LEVELS, Robot } from "./robot-runner.js";
 import { HORIZONS, } from "./types.js";
 import { technical } from "./indicators.js";
 const store = new Store(), market = new MarketData(), news = new NewsIntelligenceEngine(store), models = new ModelRegistry(), lab = new StrategyLab(market.rest);
@@ -233,11 +233,11 @@ app.post("/api/robot/toggle", express.json({ limit: "1kb" }), auth.requireAdmin,
 app.post("/api/robot/settings", express.json({ limit: "1kb" }), auth.requireAdmin, (req, res) => {
     if (!robot)
         return void res.status(503).json({ error: "Robô iniciando" });
-    const list = Array.isArray(req.body?.horizons)
-        ? req.body.horizons.map(Number)
-        : [];
-    robot.setHorizons(list);
-    res.json({ horizons: robot.horizons });
+    if (Array.isArray(req.body?.horizons))
+        robot.setHorizons(req.body.horizons.map(Number));
+    if (ROBOT_LEVELS.includes(req.body?.level))
+        robot.setLevel(req.body.level);
+    res.json({ horizons: robot.horizons, level: robot.level });
 });
 // Live reading of one asset for the chart screen (rules only, no AI budget spent).
 app.get("/api/robot/read/:symbol", (req, res) => {
@@ -248,6 +248,7 @@ app.get("/api/robot/read/:symbol", (req, res) => {
     res.json({
         enabled: robot.enabled,
         horizons: robot.horizons,
+        level: robot.level,
         ai: robot.ai.enabled,
         labReady: lab.evaluations.length > 0,
         labStatus: lab.status,

@@ -74,7 +74,7 @@ export class RobotAI {
           ),
           output_config: { effort: "low", format: betaZodOutputFormat(Review) },
         },
-        { timeout: 25000 },
+        { timeout: 20000, maxRetries: 0 },
       );
       if (r.stop_reason === "refusal") throw Error("A IA recusou esta análise");
       const out = r.parsed_output;

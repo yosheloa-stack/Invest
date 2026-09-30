@@ -19,7 +19,7 @@ import { ModelRegistry } from "./models.js";
 import { buildFeatures } from "./features.js";
 import { evaluate, advanceSignal, strategyDecision } from "./signals.js";
 import { StrategyLab } from "./lab.js";
-import { Robot } from "./robot-runner.js";
+import { ROBOT_LEVELS, Robot, type RobotLevel } from "./robot-runner.js";
 import {
   HORIZONS,
   type Decision,
@@ -284,11 +284,11 @@ app.post(
   auth.requireAdmin,
   (req, res) => {
     if (!robot) return void res.status(503).json({ error: "Robô iniciando" });
-    const list = Array.isArray(req.body?.horizons)
-      ? req.body.horizons.map(Number)
-      : [];
-    robot.setHorizons(list);
-    res.json({ horizons: robot.horizons });
+    if (Array.isArray(req.body?.horizons))
+      robot.setHorizons(req.body.horizons.map(Number));
+    if ((ROBOT_LEVELS as readonly string[]).includes(req.body?.level))
+      robot.setLevel(req.body.level as RobotLevel);
+    res.json({ horizons: robot.horizons, level: robot.level });
   },
 );
 // Live reading of one asset for the chart screen (rules only, no AI budget spent).
@@ -300,6 +300,7 @@ app.get("/api/robot/read/:symbol", (req, res) => {
   res.json({
     enabled: robot.enabled,
     horizons: robot.horizons,
+    level: robot.level,
     ai: robot.ai.enabled,
     labReady: lab.evaluations.length > 0,
     labStatus: lab.status,

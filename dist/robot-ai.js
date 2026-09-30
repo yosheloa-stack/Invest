@@ -67,7 +67,7 @@ export class RobotAI {
             const r = await this.client.beta.messages.parse({
                 ...this.request(`${brief(read, closed)}\n\nO robô quer entrar agora em ${pick.direction} com expiração de ${pick.horizon} minutos, pelo gatilho "${pick.label}" (acerto medido ${pick.backtestWinRate == null ? "?" : (pick.backtestWinRate * 100).toFixed(1) + "%"} em ${pick.backtestTrades} testes; no próprio robô ${pick.liveWins}/${pick.liveTrades}).\nDecida ENTRAR ou PULAR, dê sua confiança de 0 a 100 e o motivo em uma ou duas frases.`),
                 output_config: { effort: "low", format: betaZodOutputFormat(Review) },
-            }, { timeout: 25000 });
+            }, { timeout: 20000, maxRetries: 0 });
             if (r.stop_reason === "refusal")
                 throw Error("A IA recusou esta análise");
             const out = r.parsed_output;

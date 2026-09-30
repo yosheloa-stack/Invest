@@ -78,7 +78,7 @@ test("robot only picks triggers whose history beats break-even", () => {
   assert.ok(good.pick!.score >= opts.minScore);
   const bad = readMarket("TESTUSDT", cs, evals(0.5), new Map(), opts)!;
   assert.equal(bad.pick, null);
-  assert.match(bad.why, /equilíbrio/);
+  assert.match(bad.why, /mínimo/);
   assert.equal(good.trend, "ALTA");
 });
 test("robot's own losses pause a strategy", () => {

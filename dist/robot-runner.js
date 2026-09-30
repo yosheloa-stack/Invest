@@ -3,6 +3,7 @@ import { log } from "./log.js";
 import { HORIZONS } from "./types.js";
 import { RobotAI } from "./robot-ai.js";
 import { liveKey, newTrade, readMarket, robotStats, settleTrade, } from "./robot.js";
+export const ROBOT_LEVELS = ["alta", "media", "baixa"];
 // Runs the simulated operator: one open trade per asset, settles at expiry from the live price.
 export class Robot {
     db;
@@ -11,6 +12,8 @@ export class Robot {
     enabled = config.ROBOT_ENABLED;
     // Expiries the robot may use; chosen on the chart screen and kept across restarts.
     horizons = [...HORIZONS];
+    // How good a trigger's history must be to enter; chosen on the chart screen.
+    level = "media";
     trades = [];
     reads = new Map();
     status = "AGUARDANDO HISTÓRICO DO LABORATÓRIO";
@@ -29,9 +32,20 @@ export class Robot {
         return {
             breakEven: this.breakEven,
             minTrades: config.ROBOT_MIN_TRADES,
-            minScore: Math.max(config.ROBOT_MIN_WINRATE, this.breakEven),
+            minScore: config.ROBOT_MIN_WINRATE || this.levelScore(),
             horizons: this.horizons,
         };
+    }
+    levelScore() {
+        return this.level === "alta"
+            ? this.breakEven
+            : this.level === "media"
+                ? 0.53
+                : 0.5;
+    }
+    setLevel(level) {
+        this.level = level;
+        this.db.query("INSERT INTO robot_settings(key,value) VALUES('level',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify(level)]);
     }
     // Trades left open by a restart are settled by settle() from the reloaded candles.
     setHorizons(list) {
@@ -54,6 +68,9 @@ export class Robot {
                     this.horizons = HORIZONS.filter((h) => v.includes(h));
                 if (r.key === "enabled" && typeof v === "boolean")
                     this.enabled = v;
+                if (r.key === "level" &&
+                    ROBOT_LEVELS.includes(v))
+                    this.level = v;
             }
             catch {
                 /* ignore a corrupt setting */
@@ -167,7 +184,7 @@ export class Robot {
                 }
                 const q = priceOf(symbol), at = this.clock();
                 // The opportunity is only valid right after the candle closed.
-                if (!q || at - last.end > 30000 || at - q.t > config.STALE_MS)
+                if (!q || at - last.end > 45000 || at - q.t > config.STALE_MS)
                     return;
                 if (this.open.some((t) => t.symbol === symbol))
                     return;
@@ -191,6 +208,8 @@ export class Robot {
         return {
             enabled: this.enabled,
             horizons: this.horizons,
+            level: this.level,
+            minScore: this.options().minScore,
             status: this.status,
             stats: robotStats(this.trades, config.ROBOT_BANKROLL),
             open: this.open,
@@ -201,7 +220,6 @@ export class Robot {
         return {
             ...this.brief(),
             breakEven: this.breakEven,
-            minScore: this.options().minScore,
             minTrades: config.ROBOT_MIN_TRADES,
             stake: config.ROBOT_STAKE,
             payout: config.PAYOUT,

@@ -195,6 +195,8 @@ export type RobotStats = {
 export type RobotBrief = {
   enabled: boolean;
   horizons: number[];
+  level: "alta" | "media" | "baixa";
+  minScore: number;
   status: string;
   stats: RobotStats;
   open: RobotTrade[];
@@ -221,7 +223,6 @@ export type MarketRead = {
 };
 export type RobotSummary = RobotBrief & {
   breakEven: number;
-  minScore: number;
   minTrades: number;
   stake: number;
   payout: number;

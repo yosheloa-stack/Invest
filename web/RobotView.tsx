@@ -111,6 +111,23 @@ function OpenTrade({ t, now }: { t: RobotTrade; now: number }) {
   );
 }
 const EXPIRIES = [5, 10, 15];
+const LEVELS: { id: RobotBrief["level"]; label: string; text: string }[] = [
+  {
+    id: "alta",
+    label: "Alta",
+    text: "Só entra com gatilho que acertou mais de 55,6% no histórico (o que paga com payout 80%). Poucas entradas.",
+  },
+  {
+    id: "media",
+    label: "Média",
+    text: "Entra com gatilho que acertou 53% ou mais, sempre a favor da tendência. Mais entradas; gatilho que perder no robô é pausado sozinho.",
+  },
+  {
+    id: "baixa",
+    label: "Baixa",
+    text: "Entra com qualquer gatilho a favor da tendência que não perde no histórico (50%+). Muitas entradas, para estudar.",
+  },
+];
 const SOUND_KEY = "yosh-robot-sound";
 function soundOn() {
   try {
@@ -163,6 +180,16 @@ export function RobotSide({
     await api("/api/robot/settings", {
       method: "POST",
       body: JSON.stringify({ horizons: next }),
+    }).catch(() => undefined);
+    await reload();
+    setSaving(false);
+  };
+  const level = brief?.level ?? "media";
+  const setLevel = async (l: RobotBrief["level"]) => {
+    setSaving(true);
+    await api("/api/robot/settings", {
+      method: "POST",
+      body: JSON.stringify({ level: l }),
     }).catch(() => undefined);
     await reload();
     setSaving(false);
@@ -237,6 +264,25 @@ export function RobotSide({
         <small className="muted">
           Vale para qualquer tempo de gráfico: você pode olhar o M1 e entrar com
           expiração de 5 min.
+        </small>
+      </div>
+      <div className="rb-setting">
+        <span>Exigência para entrar</span>
+        <div className="rb-exp" role="group" aria-label="Exigência">
+          {LEVELS.map((l) => (
+            <button
+              key={l.id}
+              className={level === l.id ? "on" : ""}
+              aria-pressed={level === l.id}
+              disabled={!admin || saving}
+              onClick={() => setLevel(l.id)}
+            >
+              {l.label}
+            </button>
+          ))}
+        </div>
+        <small className="muted">
+          {LEVELS.find((l) => l.id === level)?.text}
         </small>
       </div>
       <button className={`rb-sound ${sound ? "on" : ""}`} onClick={flipSound}>
@@ -459,6 +505,7 @@ export type RobotRead = {
   labReady: boolean;
   labStatus: string;
   horizons: number[];
+  level?: RobotBrief["level"];
   read: MarketRead | null;
   trades: RobotTrade[];
 };
