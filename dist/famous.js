@@ -1,4 +1,7 @@
-const sgn = (x) => (x > 0 ? 1 : x < 0 ? -1 : 0);
+import { both, sgn, } from "./strategies.js";
+// Popular public indicators (TradingView community scripts and classic trader setups),
+// reimplemented from their published logic. Every rule reads only bars up to i, and the
+// lab decides which of them, if any, earn a place in the robot.
 // Indicator arrays are computed once per Series and reused by every bar and variant.
 const cache = new WeakMap();
 function memo(s, key, make) {
@@ -70,25 +73,6 @@ const trueRange = (s) => memo(s, "tr", () => Float64Array.from(s.c, (_, i) => i
     ? Math.max(s.h[i] - s.l[i], Math.abs(s.h[i] - s.c[i - 1]), Math.abs(s.l[i] - s.c[i - 1]))
     : s.h[i] - s.l[i]));
 const atr = (s, n) => memo(s, `atr${n}`, () => rma(trueRange(s), n));
-function rsiOf(c, n) {
-    const out = nan(c.length);
-    let g = 0, l = 0;
-    for (let i = 1; i < c.length; i++) {
-        const d = c[i] - c[i - 1], up = Math.max(0, d), dn = Math.max(0, -d);
-        if (i <= n) {
-            g += up / n;
-            l += dn / n;
-            if (i < n)
-                continue;
-        }
-        else {
-            g = (g * (n - 1) + up) / n;
-            l = (l * (n - 1) + dn) / n;
-        }
-        out[i] = l === 0 ? (g === 0 ? 50 : 100) : 100 - 100 / (1 + g / l);
-    }
-    return out;
-}
 // SuperTrend (Olivier Seban): ATR bands around the median price that only tighten; the trend
 // flips when the close crosses the opposite band.
 function superTrend(s, n, m) {
@@ -200,7 +184,7 @@ function dmi(s) {
             p[i] = u > d && u > 0 ? u : 0;
             m[i] = d > u && d > 0 ? d : 0;
         }
-        const a = atr(s, 14), sp = rma(p, 14), sm = rma(m, 14), plus = Float64Array.from(sp, (v, i) => (100 * v) / a[i]), minus = Float64Array.from(sm, (v, i) => (100 * v) / a[i]), dx = Float64Array.from(plus, (v, i) => v + minus[i] ? (100 * Math.abs(v - minus[i])) / (v + minus[i]) : 0);
+        const a = s.atr, sp = rma(p, 14), sm = rma(m, 14), plus = Float64Array.from(sp, (v, i) => (100 * v) / a[i]), minus = Float64Array.from(sm, (v, i) => (100 * v) / a[i]), dx = Float64Array.from(plus, (v, i) => v + minus[i] ? (100 * Math.abs(v - minus[i])) / (v + minus[i]) : 0);
         return { plus, minus, adx: rma(dx, 14) };
     });
 }
@@ -261,28 +245,17 @@ const crossUp = (a, b, i) => i > 0 && a[i - 1] <= b[i - 1] && a[i] > b[i];
 const crossDown = (a, b, i) => i > 0 && a[i - 1] >= b[i - 1] && a[i] < b[i];
 // Five independent trend readings; the confluence family enters when they newly agree.
 function votes(s, i) {
-    const st = superTrend(s, 10, 3)[i], m = macd(s), ic = ichimoku(s), ha = heikinAshi(s), cloud = s.c[i] > ic.top[i] ? 1 : s.c[i] < ic.bottom[i] ? -1 : 0;
-    return (st +
-        sgn(m.line[i] - m.signal[i]) +
-        cloud +
-        sgn(ha.c[i] - ha.o[i]) +
-        sgn(s.ema9[i] - s.ema21[i]));
-}
-function both(family, key, label, base) {
-    return [
-        {
-            id: `${family}:${key}:seguir`,
-            family,
-            label: `${label} · seguir`,
-            signal: base,
-        },
-        {
-            id: `${family}:${key}:reverter`,
-            family,
-            label: `${label} · reverter`,
-            signal: (s, i) => (-base(s, i) || 0),
-        },
+    const m = macd(s), ic = ichimoku(s), ha = heikinAshi(s), v = [
+        superTrend(s, 10, 3)[i],
+        sgn(m.line[i] - m.signal[i]),
+        s.c[i] > ic.top[i] ? 1 : s.c[i] < ic.bottom[i] ? -1 : 0,
+        sgn(ha.c[i] - ha.o[i]),
+        sgn(s.ema9[i] - s.ema21[i]),
     ];
+    return {
+        up: v.filter((x) => x === 1).length,
+        down: v.filter((x) => x === -1).length,
+    };
 }
 export function famousStrategies() {
     const out = [];
@@ -412,9 +385,9 @@ export function famousStrategies() {
             if (!i)
                 return 0;
             const v = votes(s, i), p = votes(s, i - 1);
-            if (v >= need * 2 - 5 && p < need * 2 - 5)
+            if (v.up >= need && p.up < need)
                 return 1;
-            if (v <= 5 - need * 2 && p > 5 - need * 2)
+            if (v.down >= need && p.down < need)
                 return -1;
             return 0;
         }));

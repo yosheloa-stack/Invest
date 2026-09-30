@@ -193,7 +193,8 @@ export class StrategyLab {
                     minTrades: config.STRATEGY_MIN_TRADES,
                     z: config.STRATEGY_Z,
                     inSampleShare: 0.6,
-                    returnThreshold: config.RETURN_THRESHOLD,
+                    // Ebinex pays on any move at expiry, so the backtest scores every move too.
+                    returnThreshold: 0,
                 };
                 if (this.stopped)
                     return;

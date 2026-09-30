@@ -56,6 +56,10 @@ const schema = z.object({
     ROBOT_BANKROLL: z.coerce.number().positive().default(1000),
     ROBOT_MAX_OPEN: z.coerce.number().int().min(1).max(11).default(3),
     ROBOT_MIN_TRADES: z.coerce.number().int().min(10).default(30),
+    // Distinct strategy families that must fire the same way before the robot enters.
+    ROBOT_MIN_AGREE: z.coerce.number().int().min(1).max(5).default(2),
+    // The robot stops trading an asset or hour where its own record is below break-even.
+    ROBOT_CUT_MIN_TRADES: z.coerce.number().int().min(5).default(15),
     ROBOT_MIN_WINRATE: z.coerce.number().min(0).max(0.99).default(0),
     ANTHROPIC_API_KEY: z.string().trim().default(""),
     ROBOT_AI_MODEL: z.string().trim().default("claude-opus-5"),

@@ -2,7 +2,7 @@ import { config, staleMs } from "./config.js";
 import { log } from "./log.js";
 import { ROBOT_DEFAULT_HORIZONS, STRATEGY_HORIZONS, } from "./types.js";
 import { RobotAI } from "./robot-ai.js";
-import { liveKey, newTrade, readMarket, robotStats, settleTrade, robotPerformance, } from "./robot.js";
+import { liveKey, losingSpot, newTrade, readMarket, robotStats, settleTrade, robotPerformance, } from "./robot.js";
 export const ROBOT_LEVELS = ["alta", "media", "baixa"];
 // Runs the simulated operator: one open trade per asset, settles at expiry from the live price.
 export class Robot {
@@ -34,6 +34,7 @@ export class Robot {
             minTrades: config.ROBOT_MIN_TRADES,
             minScore: config.ROBOT_MIN_WINRATE || this.levelScore(),
             horizons: this.horizons,
+            minAgree: config.ROBOT_MIN_AGREE,
         };
     }
     levelScore() {
@@ -81,7 +82,14 @@ export class Robot {
             this.horizons = [...ROBOT_DEFAULT_HORIZONS];
         this.trades = this.db
             .query("SELECT body FROM robot_trades ORDER BY opened_at DESC LIMIT 3000")
-            .rows.map((r) => typeof r.body === "string" ? JSON.parse(r.body) : r.body);
+            .rows.flatMap((r) => {
+            try {
+                return [typeof r.body === "string" ? JSON.parse(r.body) : r.body];
+            }
+            catch {
+                return []; // skip a corrupt row instead of failing startup
+            }
+        });
     }
     save(t) {
         this.db.query("INSERT INTO robot_trades(id,symbol,opened_at,status,body) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status, body=EXCLUDED.body", [t.id, t.symbol, t.openedAt, t.status, JSON.stringify(t)]);
@@ -120,11 +128,12 @@ export class Robot {
             }
             if (now < t.due + 90000)
                 continue;
-            // Live price missed the expiry (restart or feed gap): use the 1m candle that contains it.
+            // Live price missed the expiry (restart or feed gap): the open of the 1m candle that
+            // contains it is the last known price at or before expiry.
             const c = candleAt(t.symbol, t.due);
             this.save(c
                 ? {
-                    ...settleTrade(t, c.c, c.end),
+                    ...settleTrade(t, c.o, t.due),
                     note: "Saída pelo fechamento do candle do vencimento",
                 }
                 : {
@@ -165,8 +174,18 @@ export class Robot {
             !pick ||
             this.busy.has(symbol) ||
             this.open.some((t) => t.symbol === symbol) ||
-            this.open.length >= config.ROBOT_MAX_OPEN)
+            this.open.length + this.busy.size >= config.ROBOT_MAX_OPEN)
             return;
+        const losing = losingSpot(this.trades, symbol, now, this.breakEven, config.ROBOT_CUT_MIN_TRADES);
+        if (losing) {
+            this.reads.set(symbol, {
+                ...read,
+                pick: null,
+                why: losing,
+                lines: [...read.lines.slice(0, -1), losing],
+            });
+            return;
+        }
         const lastOnSymbol = this.trades.find((t) => t.symbol === symbol);
         if (lastOnSymbol &&
             now < lastOnSymbol.openedAt + lastOnSymbol.horizon * 60000)
@@ -187,7 +206,8 @@ export class Robot {
                 // The opportunity is only valid right after the candle closed.
                 if (!q || at - last.end > 45000 || at - q.t > staleMs(symbol))
                     return;
-                if (this.open.some((t) => t.symbol === symbol))
+                if (this.open.some((t) => t.symbol === symbol) ||
+                    this.open.length >= config.ROBOT_MAX_OPEN)
                     return;
                 this.save(newTrade(read, pick, q.p, at, config.ROBOT_STAKE, config.PAYOUT, review
                     ? {

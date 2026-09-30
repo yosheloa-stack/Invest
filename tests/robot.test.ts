@@ -8,6 +8,7 @@ import {
   robotStats,
   newTrade,
   liveKey,
+  losingSpot,
 } from "../src/robot.js";
 import type { Candle } from "../src/types.js";
 function trendUp(n: number): Candle[] {
@@ -197,4 +198,48 @@ test("robotPerformance counts closed trades by asset and ignores open ones", () 
   assert.equal(p.profit, -1);
   assert.equal(p.byAsset.BTCUSDT.count, 2);
   assert.equal(p.byHorizon["5 min"].count, 3);
+});
+test("robot waits until enough strategy families agree", () => {
+  const cs = firing();
+  const r = readMarket("TESTUSDT", cs, evals(0.6), new Map(), opts)!;
+  const families = new Set(
+    r.fired
+      .filter((f) => f.direction === r.pick!.direction)
+      .map((f) => f.id.split(":")[0]),
+  ).size;
+  const strict = readMarket("TESTUSDT", cs, evals(0.6), new Map(), {
+    ...opts,
+    minAgree: families + 1,
+  })!;
+  assert.equal(strict.pick, null);
+  assert.match(strict.why, /concordando/);
+  const ok = readMarket("TESTUSDT", cs, evals(0.6), new Map(), {
+    ...opts,
+    minAgree: families,
+  })!;
+  assert.ok(ok.pick, ok.why);
+});
+test("robot stops on an asset where its own record loses", () => {
+  const cs = firing();
+  const r = readMarket("TESTUSDT", cs, evals(0.6), new Map(), opts)!;
+  const base = {
+    ...newTrade(r, r.pick!, 100, 0, 10, 0.9, null),
+    direction: "COMPRA" as const,
+  };
+  const trades = Array.from({ length: 20 }, (_, k) =>
+    settleTrade(
+      { ...base, id: String(k), openedAt: k * 3600000 },
+      k < 8 ? 101 : 99,
+      0,
+    ),
+  );
+  assert.match(
+    losingSpot(trades, "TESTUSDT", 0, 1 / 1.9, 15) ?? "",
+    /neste ativo/,
+  );
+  assert.equal(losingSpot(trades, "OTHER", 0, 1 / 1.9, 15), null);
+  assert.equal(
+    losingSpot(trades.slice(0, 10), "TESTUSDT", 0, 1 / 1.9, 15),
+    null,
+  );
 });

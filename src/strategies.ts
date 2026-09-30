@@ -26,7 +26,7 @@ export interface Series {
   sup: Float64Array;
   res: Float64Array;
 }
-type Dir = -1 | 0 | 1;
+export type Dir = -1 | 0 | 1;
 export interface StrategySpec {
   id: string;
   family: string;
@@ -279,9 +279,9 @@ export function levelsAt(s: Series, i = s.c.length - 1, max = 6): Level[] {
     )
     .slice(0, max);
 }
-const sgn = (x: number): Dir => (x > 0 ? 1 : x < 0 ? -1 : 0);
+export const sgn = (x: number): Dir => (x > 0 ? 1 : x < 0 ? -1 : 0);
 // Each family is tested both ways ("seguir" follows the move, "reverter" fades it); the data decides.
-function both(
+export function both(
   family: string,
   key: string,
   label: string,

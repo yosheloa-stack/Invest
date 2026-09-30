@@ -194,9 +194,9 @@ export function levelsAt(s, i = s.c.length - 1, max = 6) {
         Math.abs(x.price - s.c[i]) - Math.abs(y.price - s.c[i]))
         .slice(0, max);
 }
-const sgn = (x) => (x > 0 ? 1 : x < 0 ? -1 : 0);
+export const sgn = (x) => (x > 0 ? 1 : x < 0 ? -1 : 0);
 // Each family is tested both ways ("seguir" follows the move, "reverter" fades it); the data decides.
-function both(family, key, label, base) {
+export function both(family, key, label, base) {
     return [
         {
             id: `${family}:${key}:seguir`,
