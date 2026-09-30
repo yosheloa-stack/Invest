@@ -407,6 +407,8 @@ async function initialize() {
     initialized = true;
     stats = await store.stats();
 }
+// Lets socket messages in between assets; a long synchronous pass makes every feed look late.
+const breathe = () => new Promise((r) => setImmediate(r));
 async function tick() {
     if (busy || !initialized || stopping)
         return;
@@ -420,8 +422,10 @@ async function tick() {
         const candidates = new Map();
         if (isNewBucket && store.healthy)
             for (const s of cycle)
-                if (!market.reasons(s).length)
+                if (!market.reasons(s).length) {
                     candidates.set(s.symbol, HORIZONS.map((h) => buildFeatures(s, h, now, news.context(s.symbol, now, h), news.ready())));
+                    await breathe();
+                }
         if (!store.healthy) {
             await store.ping();
             dbError = null;
@@ -505,8 +509,8 @@ async function tick() {
                     ds.push(d);
                 }
                 decisions.set(s.symbol, ds);
+                await breathe();
             }
-            stats = await store.stats();
         }
         // Strategy triggers run as soon as a 1m candle closes, independent of the minute bucket.
         const newsOk = !(config.NEWS_REQUIRED || config.SNIPER) || news.ready();
@@ -522,6 +526,7 @@ async function tick() {
                 now - cl.end > 15000)
                 continue;
             strategyCandle.set(s.symbol, cl.t);
+            await breathe();
             for (const h of HORIZONS) {
                 const pick = lab.decide(s.symbol, h, closed);
                 const decisionNow = market.rest.now();
@@ -556,6 +561,7 @@ async function tick() {
                     const closed = s.candles["1m"].filter((c) => c.end < now);
                     robot.onCandle(s.symbol, closed, priceOf, market.rest.now());
                     scanPatterns(s.symbol, closed);
+                    await breathe();
                 }
         }
         if (signalsChanged)

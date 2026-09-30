@@ -348,10 +348,13 @@ export class MarketData extends EventEmitter {
             if (!(tf in INTERVALS))
                 throw Error("Intervalo inesperado");
             const eventTime = Number(d.E);
-            if (!Number.isFinite(eventTime) ||
-                now - eventTime > config.STALE_MS ||
-                eventTime > now + 1000)
-                throw Error("Kline atrasado");
+            if (!Number.isFinite(eventTime) || eventTime > now + 1000)
+                throw Error("Kline inválido");
+            // A late message is skipped, not fatal: it usually means this process was busy, and
+            // dropping every socket at once would take all charts down. Staleness still shows
+            // through lastKline.
+            if (now - eventTime > config.STALE_MS)
+                return;
             s.lastKline[tf] = now;
             if (tf === "1m" && !k.x && eventTime >= (s.formingAt ?? 0)) {
                 s.forming = this.validateCandle({
