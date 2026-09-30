@@ -11,7 +11,7 @@ const schema = z.object({
     PUBLIC_ORIGIN: z.string().default(""),
     SYMBOLS: z
         .string()
-        .default("BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,DOGEUSDT,ADAUSDT,AVAXUSDT,LTCUSDT,LINKUSDT,EURUSDT"),
+        .default("BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,DOGEUSDT,ADAUSDT,BNBUSDT,AVAXUSDT,LTCUSDT,LINKUSDT,EURUSDT"),
     ALLOW_SIGNUP: z
         .enum(["true", "false"])
         .default("true")
@@ -27,7 +27,7 @@ const schema = z.object({
     MODE: z.literal("PAPER").default("PAPER"),
     SNIPER: bool,
     NEWS_REQUIRED: bool,
-    PAYOUT: z.coerce.number().positive().max(1).default(0.8),
+    PAYOUT: z.coerce.number().positive().max(1).default(0.9),
     RETURN_THRESHOLD: z.coerce.number().min(0).default(0.0005),
     MIN_PROBABILITY: z.coerce.number().min(0.5).max(0.99).default(0.6),
     MIN_GROUPS: z.coerce.number().int().min(2).max(8).default(4),

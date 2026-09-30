@@ -1,12 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod/v4";
+import { config } from "./config.js";
 import { log } from "./log.js";
 import type { Candle } from "./types.js";
 import type { Fired, MarketRead } from "./robot.js";
 // Optional Claude analyst. Without ANTHROPIC_API_KEY the robot keeps working on rules alone.
-const SYSTEM = `Você é o analista de um robô que opera opções binárias (alta/baixa com expiração de 5, 10 ou 15 minutos) em SIMULAÇÃO, com dados de 1 minuto de criptomoedas.
-Payout de referência: ganho de 80% do valor na vitória, perda de 100% na derrota; é preciso acertar mais de 55,6% para lucrar.
+const SYSTEM = `Você é o analista de um robô que opera opções binárias (alta/baixa com expiração de 1, 5, 10 ou 15 minutos) em SIMULAÇÃO, com dados de 1 minuto de criptomoedas.
+Payout de referência: ganho de ${Math.round(config.PAYOUT * 100)}% do valor na vitória, perda de 100% na derrota; é preciso acertar mais de ${(100 / (1 + config.PAYOUT)).toFixed(1).replace(".", ",")}% para lucrar.
 Você recebe a leitura técnica calculada pelo sistema (tendência, suporte, resistência, RSI, gatilhos com a taxa de acerto medida em backtest fora da amostra) e os candles recentes.
 Seja cético: a maioria das entradas de curto prazo é ruído. Prefira ficar de fora quando o preço está colado em suporte/resistência contra a entrada, quando o candle é de exaustão ou quando a vantagem medida é pequena.
 Escreva sempre em português do Brasil, frases curtas e diretas, sem jargão desnecessário. Nunca prometa lucro.`;
@@ -100,7 +101,7 @@ export class RobotAI {
       const r = await this.client!.beta.messages.create(
         {
           ...this.request(
-            `${brief(read, closed)}\n\nFaça a análise deste ativo para quem opera opções binárias de 5, 10 e 15 minutos. Em no máximo 6 linhas curtas: o que o preço está fazendo, onde estão as zonas importantes, se há entrada agora (compra, venda ou esperar) com qual expiração, e o que invalidaria a ideia. Sem markdown, uma ideia por linha.`,
+            `${brief(read, closed)}\n\nFaça a análise deste ativo para quem opera opções binárias de 1, 5 e 15 minutos (Ebinex). Em no máximo 6 linhas curtas: o que o preço está fazendo, onde estão as zonas importantes, se há entrada agora (compra, venda ou esperar) com qual expiração, e o que invalidaria a ideia. Sem markdown, uma ideia por linha.`,
           ),
           output_config: { effort: "low" },
         },

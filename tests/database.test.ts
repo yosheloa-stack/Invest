@@ -102,7 +102,7 @@ test("SQLite integration: migrations, observations, strict settlement, durable o
     assert.equal(stats.wins, 1);
     assert.equal(stats.winRate, 1);
     assert.equal(stats.calibration.find((b) => b.count)?.observed, 1);
-    assert.ok(Math.abs(stats.breakEven - 1 / 1.8) < 1e-10);
+    assert.ok(Math.abs(stats.breakEven - 1 / 1.9) < 1e-10);
     await store.saveNews({
       id: "news-test",
       title: "Test",

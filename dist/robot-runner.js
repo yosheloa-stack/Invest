@@ -1,6 +1,6 @@
 import { config } from "./config.js";
 import { log } from "./log.js";
-import { HORIZONS } from "./types.js";
+import { ROBOT_DEFAULT_HORIZONS, STRATEGY_HORIZONS, } from "./types.js";
 import { RobotAI } from "./robot-ai.js";
 import { liveKey, newTrade, readMarket, robotStats, settleTrade, } from "./robot.js";
 export const ROBOT_LEVELS = ["alta", "media", "baixa"];
@@ -11,7 +11,7 @@ export class Robot {
     clock;
     enabled = config.ROBOT_ENABLED;
     // Expiries the robot may use; chosen on the chart screen and kept across restarts.
-    horizons = [...HORIZONS];
+    horizons = [...ROBOT_DEFAULT_HORIZONS];
     // How good a trigger's history must be to enter; chosen on the chart screen.
     level = "media";
     trades = [];
@@ -37,10 +37,11 @@ export class Robot {
         };
     }
     levelScore() {
+        // Alta: 3 points above break-even; Média: break-even; Baixa: not a loser in history.
         return this.level === "alta"
-            ? this.breakEven
+            ? this.breakEven + 0.03
             : this.level === "media"
-                ? 0.53
+                ? this.breakEven
                 : 0.5;
     }
     setLevel(level) {
@@ -49,9 +50,9 @@ export class Robot {
     }
     // Trades left open by a restart are settled by settle() from the reloaded candles.
     setHorizons(list) {
-        this.horizons = HORIZONS.filter((h) => list.includes(h));
+        this.horizons = STRATEGY_HORIZONS.filter((h) => list.includes(h));
         if (!this.horizons.length)
-            this.horizons = [...HORIZONS];
+            this.horizons = [...ROBOT_DEFAULT_HORIZONS];
         this.db.query("INSERT INTO robot_settings(key,value) VALUES('horizons',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify(this.horizons)]);
     }
     setEnabled(on) {
@@ -65,7 +66,7 @@ export class Robot {
             try {
                 const v = JSON.parse(String(r.value));
                 if (r.key === "horizons" && Array.isArray(v))
-                    this.horizons = HORIZONS.filter((h) => v.includes(h));
+                    this.horizons = STRATEGY_HORIZONS.filter((h) => v.includes(h));
                 if (r.key === "enabled" && typeof v === "boolean")
                     this.enabled = v;
                 if (r.key === "level" &&
@@ -77,7 +78,7 @@ export class Robot {
             }
         }
         if (!this.horizons.length)
-            this.horizons = [...HORIZONS];
+            this.horizons = [...ROBOT_DEFAULT_HORIZONS];
         this.trades = this.db
             .query("SELECT body FROM robot_trades ORDER BY opened_at DESC LIMIT 3000")
             .rows.map((r) => typeof r.body === "string" ? JSON.parse(r.body) : r.body);

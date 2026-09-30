@@ -1,7 +1,7 @@
 import { Worker } from "node:worker_threads";
 import { config, symbols } from "./config.js";
 import { log } from "./log.js";
-import { HORIZONS } from "./types.js";
+import { STRATEGY_HORIZONS } from "./types.js";
 import { buildSeries, catalog, } from "./strategies.js";
 const yieldLoop = () => new Promise((r) => setImmediate(r));
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -190,7 +190,7 @@ export class StrategyLab {
                         workerData: {
                             symbol,
                             candles: cs,
-                            horizons: HORIZONS,
+                            horizons: STRATEGY_HORIZONS,
                             options,
                         },
                     }));

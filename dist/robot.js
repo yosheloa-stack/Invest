@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { buildSeries, catalog } from "./strategies.js";
 import { priceContext } from "./price-context.js";
-import { HORIZONS } from "./types.js";
+import { STRATEGY_HORIZONS } from "./types.js";
 const specs = new Map(catalog().map((x) => [x.id, x]));
 export const liveKey = (id, symbol, h) => `${id}|${symbol}|${h}`;
 const fmt = (n) => n.toLocaleString("pt-BR", {
@@ -120,7 +120,7 @@ export function settleTrade(t, exit, at) {
 }
 export function robotStats(trades, bankroll) {
     const done = trades.filter((t) => t.status === "FECHADA"), wins = done.filter((t) => t.result === "WIN").length, losses = done.filter((t) => t.result === "LOSS").length, profit = done.reduce((a, t) => a + (t.profit ?? 0), 0), day = new Date().toISOString().slice(0, 10), today = done.filter((t) => new Date(t.openedAt).toISOString().slice(0, 10) === day);
-    const byHorizon = HORIZONS.map((h) => {
+    const byHorizon = STRATEGY_HORIZONS.map((h) => {
         const r = done.filter((t) => t.horizon === h), w = r.filter((t) => t.result === "WIN").length, l = r.filter((t) => t.result === "LOSS").length;
         return {
             horizon: h,

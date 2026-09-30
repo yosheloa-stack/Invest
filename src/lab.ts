@@ -2,7 +2,7 @@ import { Worker } from "node:worker_threads";
 import { config, symbols } from "./config.js";
 import { log } from "./log.js";
 import type { RestClient } from "./market.js";
-import { HORIZONS, type Candle, type Horizon } from "./types.js";
+import { STRATEGY_HORIZONS, type Candle, type Horizon } from "./types.js";
 import {
   buildSeries,
   catalog,
@@ -220,7 +220,7 @@ export class StrategyLab {
                 workerData: {
                   symbol,
                   candles: cs,
-                  horizons: HORIZONS,
+                  horizons: STRATEGY_HORIZONS,
                   options,
                 },
               },

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { buildSeries, catalog, type Evaluation } from "./strategies.js";
 import { priceContext } from "./price-context.js";
-import { HORIZONS, type Candle, type Horizon } from "./types.js";
+import { STRATEGY_HORIZONS, type Candle, type Horizon } from "./types.js";
 // The robot reads the market on every closed 1m candle, picks the strongest trigger
 // whose measured history beats break-even, and runs it as a SIMULATED binary option.
 // It never sends an order anywhere: results only exist in this app.
@@ -231,7 +231,7 @@ export function robotStats(trades: RobotTrade[], bankroll: number) {
     today = done.filter(
       (t) => new Date(t.openedAt).toISOString().slice(0, 10) === day,
     );
-  const byHorizon = HORIZONS.map((h) => {
+  const byHorizon = STRATEGY_HORIZONS.map((h) => {
     const r = done.filter((t) => t.horizon === h),
       w = r.filter((t) => t.result === "WIN").length,
       l = r.filter((t) => t.result === "LOSS").length;

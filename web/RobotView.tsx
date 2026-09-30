@@ -110,17 +110,17 @@ function OpenTrade({ t, now }: { t: RobotTrade; now: number }) {
     </div>
   );
 }
-const EXPIRIES = [5, 10, 15];
+const EXPIRIES = [1, 5, 10, 15];
 const LEVELS: { id: RobotBrief["level"]; label: string; text: string }[] = [
   {
     id: "alta",
     label: "Alta",
-    text: "Só entra com gatilho que acertou mais de 55,6% no histórico (o que paga com payout 80%). Poucas entradas.",
+    text: "Só entra com gatilho que acertou 3 pontos acima do mínimo que dá lucro. Poucas entradas.",
   },
   {
     id: "media",
     label: "Média",
-    text: "Entra com gatilho que acertou 53% ou mais, sempre a favor da tendência. Mais entradas; gatilho que perder no robô é pausado sozinho.",
+    text: "Entra com gatilho que acertou acima do mínimo que dá lucro (52,6% com payout 90%), sempre a favor da tendência. Gatilho que perder no robô é pausado sozinho.",
   },
   {
     id: "baixa",
@@ -158,7 +158,7 @@ export function RobotSide({
   const { data, error, reload } = useRobot(),
     brief: RobotBrief | null | undefined = robot ?? data,
     s = brief?.stats,
-    be = data?.breakEven ?? 0.5556,
+    be = data?.breakEven ?? 1 / 1.9,
     admin = user.role === "admin",
     [sound, setSound] = useState(soundOn),
     [saving, setSaving] = useState(false);
@@ -317,7 +317,7 @@ export function RobotSide({
       </div>
       <p className="muted rb-note">
         Precisa acertar mais de {pct(be)} para dar lucro com payout{" "}
-        {pct(data?.payout ?? 0.8, 0)}.
+        {pct(data?.payout ?? 0.9, 0)}.
       </p>
       <h3 className="rb-side-title">Operações abertas</h3>
       {brief?.open.length ? (
