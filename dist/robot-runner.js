@@ -2,7 +2,7 @@ import { config, staleMs } from "./config.js";
 import { log } from "./log.js";
 import { ROBOT_DEFAULT_HORIZONS, STRATEGY_HORIZONS, } from "./types.js";
 import { RobotAI } from "./robot-ai.js";
-import { liveKey, newTrade, readMarket, robotStats, settleTrade, } from "./robot.js";
+import { liveKey, newTrade, readMarket, robotStats, settleTrade, robotPerformance, } from "./robot.js";
 export const ROBOT_LEVELS = ["alta", "media", "baixa"];
 // Runs the simulated operator: one open trade per asset, settles at expiry from the live price.
 export class Robot {
@@ -216,6 +216,9 @@ export class Robot {
             open: this.open,
             last: this.trades.filter((t) => t.status !== "ABERTA").slice(0, 5),
         };
+    }
+    performance() {
+        return robotPerformance(this.trades, this.breakEven);
     }
     summary() {
         return {

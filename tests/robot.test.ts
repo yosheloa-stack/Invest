@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { catalog, type Evaluation } from "../src/strategies.js";
 import {
+  robotPerformance,
   readMarket,
   settleTrade,
   robotStats,
@@ -147,4 +148,53 @@ test("robot: higher-timeframe bias follows a steady trend", async () => {
     ),
     -1,
   );
+});
+test("robotPerformance counts closed trades by asset and ignores open ones", () => {
+  const base = {
+    horizon: 5 as const,
+    direction: "COMPRA" as const,
+    strategyId: "x",
+    strategy: "RSI",
+    score: 0.6,
+    backtestWinRate: 0.6,
+    entry: 1,
+    due: 0,
+    stake: 10,
+    payout: 0.9,
+    reading: [],
+    ai: null,
+  };
+  const t = (
+    id: string,
+    symbol: string,
+    status: "ABERTA" | "FECHADA",
+    result?: "WIN" | "LOSS" | "EMPATE",
+    profit?: number,
+  ) => ({
+    ...base,
+    id,
+    symbol,
+    status,
+    result,
+    profit,
+    openedAt: 1000,
+    closedAt: 2000 + Number(id),
+  });
+  const p = robotPerformance(
+    [
+      t("1", "BTCUSDT", "FECHADA", "WIN", 9),
+      t("2", "BTCUSDT", "FECHADA", "LOSS", -10),
+      t("3", "EURUSD", "FECHADA", "EMPATE", 0),
+      t("4", "ETHUSDT", "ABERTA"),
+    ],
+    1 / 1.9,
+  );
+  assert.equal(p.count, 3);
+  assert.equal(p.wins, 1);
+  assert.equal(p.losses, 1);
+  assert.equal(p.neutrals, 1);
+  assert.equal(p.open, 1);
+  assert.equal(p.profit, -1);
+  assert.equal(p.byAsset.BTCUSDT.count, 2);
+  assert.equal(p.byHorizon["5 min"].count, 3);
 });

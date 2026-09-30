@@ -224,6 +224,11 @@ app.get("/api/robot", (_req, res) => {
         return void res.status(503).json({ error: "Robô iniciando" });
     res.json(robot.summary());
 });
+app.get("/api/robot/performance", (_req, res) => {
+    if (!robot)
+        return void res.status(503).json({ error: "Robô iniciando" });
+    res.json(robot.performance());
+});
 app.post("/api/robot/toggle", express.json({ limit: "1kb" }), auth.requireAdmin, (req, res) => {
     if (!robot)
         return void res.status(503).json({ error: "Robô iniciando" });

@@ -208,3 +208,49 @@ export function newTrade(read, pick, entry, now, stake, payout, ai) {
         ai,
     };
 }
+// The Desempenho screen: the robot's closed trades, overall and grouped.
+export function robotPerformance(trades, breakEven) {
+    const done = trades
+        .filter((t) => t.status === "FECHADA")
+        .sort((a, b) => a.closedAt - b.closedAt);
+    const summarize = (ts) => {
+        const wins = ts.filter((t) => t.result === "WIN").length, losses = ts.filter((t) => t.result === "LOSS").length;
+        let streak = 0, max = 0;
+        for (const t of ts) {
+            if (t.result === "EMPATE")
+                continue;
+            streak = t.result === "LOSS" ? streak + 1 : 0;
+            max = Math.max(max, streak);
+        }
+        return {
+            count: ts.length,
+            wins,
+            losses,
+            neutrals: ts.length - wins - losses,
+            winRate: wins + losses ? wins / (wins + losses) : null,
+            maxLossStreak: max,
+            profit: ts.reduce((a, t) => a + (t.profit ?? 0), 0),
+        };
+    };
+    const grouped = (fn) => {
+        const groups = {};
+        for (const t of done)
+            (groups[fn(t)] ??= []).push(t);
+        return Object.fromEntries(Object.entries(groups)
+            .sort((a, b) => b[1].length - a[1].length)
+            .map(([k, v]) => [k, summarize(v)]));
+    };
+    return {
+        ...summarize(done),
+        open: trades.filter((t) => t.status === "ABERTA").length,
+        breakEven,
+        byAsset: grouped((t) => t.symbol),
+        byHorizon: grouped((t) => `${t.horizon} min`),
+        byHour: grouped((t) => new Date(t.openedAt).toLocaleString("pt-BR", {
+            timeZone: "America/Sao_Paulo",
+            hour: "2-digit",
+            hour12: false,
+        }) + "h"),
+        byStrategy: grouped((t) => t.strategy),
+    };
+}

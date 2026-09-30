@@ -36,7 +36,7 @@ import type {
 const STUDY_NAME = Object.fromEntries(
   STUDIES.map((x) => [x.id, x.label]),
 ) as Record<Study, string>;
-const money = (n: number | null | undefined, sign = false) =>
+export const money = (n: number | null | undefined, sign = false) =>
   n == null
     ? "—"
     : `${sign && n > 0 ? "+" : ""}${n.toLocaleString("pt-BR", {

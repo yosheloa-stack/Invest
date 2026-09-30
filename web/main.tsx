@@ -40,6 +40,7 @@ import {
   RobotAlerts,
   RobotLive,
   RobotSide,
+  money,
   robotStudies,
   useRobotRead,
 } from "./RobotView";
@@ -1027,31 +1028,73 @@ function NewsView({ state }: { state: State | null }) {
     </>
   );
 }
+type Perf = {
+  count: number;
+  wins: number;
+  losses: number;
+  neutrals: number;
+  winRate: number | null;
+  maxLossStreak: number;
+  profit: number;
+};
+type Performance = Perf & {
+  open: number;
+  breakEven: number;
+  byAsset: Record<string, Perf>;
+  byHorizon: Record<string, Perf>;
+  byHour: Record<string, Perf>;
+  byStrategy: Record<string, Perf>;
+};
+// The robot's own simulated trades; refreshes whenever one opens or closes.
 function StatsView({ state }: { state: State | null }) {
-  const m = state?.metrics,
+  const [m, setM] = useState<Performance | null>(null),
+    [error, setError] = useState(""),
     [group, setGroup] = useState<
       "byAsset" | "byHorizon" | "byHour" | "byStrategy"
-    >("byAsset");
-  const groups = (m?.[group] || {}) as Record<string, Metric>;
+    >("byAsset"),
+    r = state?.robot,
+    key = `${r?.stats.trades ?? 0}:${r?.open.length ?? 0}`;
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      api<Performance>("/api/robot/performance")
+        .then((x) => live && (setM(x), setError("")))
+        .catch((e) => live && setError(String(e.message || e)));
+    void load();
+    const id = setInterval(load, 15000);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
+  }, [key]);
+  const groups = m?.[group] || {};
   return (
     <>
       <section className="stats">
         <div>
-          <span>Acerto real</span>
-          <strong>{pct(m?.winRate)}</strong>
+          <span>Acerto do robô</span>
+          <strong
+            className={
+              m?.winRate == null ? "" : m.winRate > m.breakEven ? "up" : "down"
+            }
+          >
+            {pct(m?.winRate)}
+          </strong>
           <small>precisa passar de {pct(m?.breakEven)}</small>
         </div>
         <div>
           <span>Ganhos / perdas</span>
           <strong>{m ? `${m.wins} / ${m.losses}` : "—"}</strong>
-          <small>{m?.neutrals ?? 0} empates</small>
+          <small>
+            {m?.neutrals ?? 0} empates · {m?.open ?? 0} aberta(s)
+          </small>
         </div>
         <div>
-          <span>Saldo em unidades</span>
-          <strong className={(m?.paperUnits ?? 0) >= 0 ? "up" : "down"}>
-            {m ? m.paperUnits.toFixed(2).replace(".", ",") : "—"}
+          <span>Lucro simulado</span>
+          <strong className={(m?.profit ?? 0) >= 0 ? "up" : "down"}>
+            {money(m?.profit, true)}
           </strong>
-          <small>1 unidade por entrada</small>
+          <small>banca {money(r?.stats.balance)}</small>
         </div>
         <div>
           <span>Pior sequência</span>
@@ -1082,16 +1125,20 @@ function StatsView({ state }: { state: State | null }) {
                 <th>Ganhos</th>
                 <th>Perdas</th>
                 <th>Acerto</th>
+                <th>Lucro</th>
               </tr>
             </thead>
             <tbody>
               {Object.entries(groups).map(([k, v]) => (
                 <tr key={k}>
-                  <td>{k.replace("estrategia:", "")}</td>
+                  <td>{group === "byAsset" ? pair(k) : k}</td>
                   <td>{v.count}</td>
                   <td>{v.wins}</td>
                   <td>{v.losses}</td>
                   <td>{pct(v.winRate)}</td>
+                  <td className={v.profit >= 0 ? "up" : "down"}>
+                    {money(v.profit, true)}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1099,7 +1146,8 @@ function StatsView({ state }: { state: State | null }) {
         </div>
         {!m?.count && (
           <p className="muted pad">
-            Os resultados aparecem depois que os primeiros sinais vencerem.
+            {error ||
+              "Os resultados aparecem aqui quando as operações do robô vencerem."}
           </p>
         )}
       </section>

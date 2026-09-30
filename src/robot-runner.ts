@@ -17,6 +17,7 @@ import {
   settleTrade,
   type MarketRead,
   type RobotTrade,
+  robotPerformance,
 } from "./robot.js";
 export const ROBOT_LEVELS = ["alta", "media", "baixa"] as const;
 export type RobotLevel = (typeof ROBOT_LEVELS)[number];
@@ -264,6 +265,9 @@ export class Robot {
       open: this.open,
       last: this.trades.filter((t) => t.status !== "ABERTA").slice(0, 5),
     };
+  }
+  performance() {
+    return robotPerformance(this.trades, this.breakEven);
   }
   summary() {
     return {
