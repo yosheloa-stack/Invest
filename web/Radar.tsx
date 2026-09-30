@@ -8,6 +8,7 @@ import {
 import { CoinIcon } from "./Icons";
 import { beep } from "./SignalDock";
 import { api, countdown, price, ticker } from "./format";
+import { speak, spokenAsset } from "./voice";
 import type { MoneyPlan, MoneyRules, PatternHit, RadarItem } from "./types";
 const Bias = ({ b }: { b: number }) =>
   b > 0 ? (
@@ -24,35 +25,33 @@ const soundOn = () => {
     return true;
   }
 };
-// "Quase entrando": every asset where an entry, a pattern breakout or a strong candle is close.
-export function RadarPanel({
-  onSelect,
-  now,
-}: {
-  onSelect: (symbol: string) => void;
-  now: number;
-}) {
-  const [items, setItems] = useState<RadarItem[] | null>(null),
-    seen = useRef<Set<string> | null>(null);
+// One radar poll for the whole app: the watcher alerts on every screen, the panel just shows it.
+let latest: RadarItem[] | null = null;
+const listeners = new Set<(x: RadarItem[]) => void>();
+export function RadarWatcher() {
+  const seen = useRef<Set<string> | null>(null);
   useEffect(() => {
     let stop = false;
     const load = () =>
       api<{ items: RadarItem[] }>("/api/radar")
         .then((x) => {
           if (stop) return;
-          setItems(x.items);
-          // Beep once for each new strong item (entry or pattern about to break).
-          const keys = x.items
-            .filter((i) => i.score >= 2.5)
-            .map((i) => `${i.symbol}|${i.title}`);
+          latest = x.items;
+          listeners.forEach((f) => f(x.items));
+          // Beep and speak once for each new entry or "quase entrando" (the robot's own
+          // entries are announced by the robot alert).
+          const strong = x.items.filter((i) => i.score >= 2.5),
+            key = (i: RadarItem) => `${i.symbol}|${i.title}`;
           if (seen.current) {
-            const fresh = x.items.find(
-              (i) =>
-                i.score >= 2.5 && !seen.current!.has(`${i.symbol}|${i.title}`),
-            );
-            if (fresh && soundOn()) beep(fresh.bias >= 0);
+            const fresh = strong.filter((i) => !seen.current!.has(key(i)));
+            if (fresh.length && soundOn()) beep(fresh[0].bias >= 0);
+            for (const i of fresh.slice(0, 2))
+              if (i.score >= 3 && i.score < 4)
+                speak(
+                  `Atenção, quase entrando: ${i.bias > 0 ? "compra" : "venda"} no ${spokenAsset(i.symbol)}`,
+                );
           }
-          seen.current = new Set(keys);
+          seen.current = new Set(strong.map(key));
         })
         .catch(() => undefined);
     void load();
@@ -61,6 +60,21 @@ export function RadarPanel({
       stop = true;
       clearInterval(t);
     };
+  }, []);
+  return null;
+}
+// "Quase entrando": every asset where an entry, a pattern breakout or a strong candle is close.
+export function RadarPanel({
+  onSelect,
+  now,
+}: {
+  onSelect: (symbol: string) => void;
+  now: number;
+}) {
+  const [items, setItems] = useState<RadarItem[] | null>(latest);
+  useEffect(() => {
+    listeners.add(setItems);
+    return () => void listeners.delete(setItems);
   }, []);
   const nextM5 = 300000 - (now % 300000);
   return (

@@ -10,6 +10,7 @@ import {
 import { clock, countdown, pair, pct, price } from "./format";
 import type { LabBrief, Signal } from "./types";
 import { CoinIcon } from "./Icons";
+import { entryPhrase, speak } from "./voice";
 import { SignalEvents, resultLabel, evidenceLabel } from "./signal-events";
 let audio: AudioContext | undefined;
 export async function unlockAudio() {
@@ -52,8 +53,21 @@ export default function SignalDock({
   lab?: LabBrief;
   onOpen: (symbol: string) => void;
 }) {
-  // Sound must be unlocked by a user gesture on each page load.
-  const [alerts, setAlerts] = useState(false);
+  // Alerts stay on across visits; the first tap on the page unlocks the sound (voice.ts).
+  const [alerts, setAlerts] = useState(() => {
+    try {
+      return localStorage.getItem("yosh-alerts") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const keep = (on: boolean) => {
+    try {
+      localStorage.setItem("yosh-alerts", on ? "1" : "0");
+    } catch {
+      /* private mode */
+    }
+  };
   const [permission, setPermission] = useState("Avisos nesta página");
   const events = useRef(new SignalEvents());
   const pending = fresh
@@ -68,6 +82,11 @@ export default function SignalDock({
     const notices = events.current.consume(signals, now, fresh);
     if (!alerts || !notices.length) return;
     beep(notices.some((e) => e.kind === "entry" || e.signal.result === "WIN"));
+    for (const e of notices)
+      if (e.kind === "entry")
+        speak(
+          entryPhrase(e.signal.direction, e.signal.symbol, e.signal.horizon),
+        );
     for (const { signal: s, kind, key } of notices) {
       const title =
         kind === "entry"
@@ -94,6 +113,7 @@ export default function SignalDock({
   const toggle = async () => {
     if (alerts) {
       setAlerts(false);
+      keep(false);
       return;
     }
     // Unlock before awaiting notification permission, while the gesture is active.
@@ -114,6 +134,7 @@ export default function SignalDock({
       message = "Som indisponível · acompanhe os avisos na página";
     setPermission(message);
     setAlerts(true);
+    keep(true);
     beep(true);
   };
   const bell = (

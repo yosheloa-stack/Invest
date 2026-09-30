@@ -39,6 +39,7 @@ import {
   type Bar,
   type Study,
 } from "./studies";
+import { candlePatterns, type Bar as PBar } from "../src/patterns";
 import type {
   CandleData,
   Evaluation,
@@ -101,6 +102,35 @@ type Reading = {
   sup?: number;
   res?: number;
 };
+// Moving averages are drawn at ~55% opacity so the candles stay in front.
+const faint = (c: string) => (/^#[0-9a-f]{6}$/i.test(c) ? `${c}8c` : c);
+// Candle patterns of the chart's timeframe, one per candle, strongest (directional) first.
+function candleMarks(bars: Bar[], tf: number, count: number) {
+  const size = tf * 60000,
+    grouped: PBar[] = [];
+  let cur: (PBar & { n: number }) | null = null;
+  // The last bar is still forming; only closed candles get a pattern.
+  for (const b of bars.slice(0, -1)) {
+    const t = Math.floor(b.t / size) * size;
+    if (!cur || cur.t !== t) {
+      if (cur && cur.n === tf) grouped.push(cur);
+      cur = { t, o: b.o, h: b.h, l: b.l, c: b.c, n: 1 };
+    } else {
+      cur.h = Math.max(cur.h, b.h);
+      cur.l = Math.min(cur.l, b.l);
+      cur.c = b.c;
+      cur.n++;
+    }
+  }
+  if (cur && cur.n === tf) grouped.push(cur);
+  const out: { t: number; hit: PatternHit }[] = [];
+  for (let i = Math.max(12, grouped.length - count); i < grouped.length; i++) {
+    const hits = candlePatterns(grouped.slice(Math.max(0, i - 20), i + 1)),
+      hit = hits.find((h) => h.bias !== 0);
+    if (hit) out.push({ t: grouped[i].t, hit });
+  }
+  return out;
+}
 const n2 = (x: number) =>
   Number.isFinite(x) ? x.toFixed(2).replace(".", ",") : "—";
 // TradingView-style live chart: 1/5/15-minute candles, the indicators the strategies read,
@@ -167,7 +197,7 @@ export default function CandleChart({
     [menu, setMenu] = useState(false),
     [showTriggers, setShowTriggers] = useState(false),
     [studies, setStudies] = useState<Set<Study>>(
-      () => new Set(["sr", "ema", "vol"]),
+      () => new Set(["sr", "candle", "ema", "vol"]),
     ),
     [reading, setReading] = useState<Reading | null>(null),
     [minute, setMinute] = useState(0);
@@ -276,9 +306,9 @@ export default function CandleChart({
       bbMid: line(pal.current.orange),
       bbDn: line(pal.current.bb),
       vwap: line(pal.current.vwap, 2),
-      ema50: line(pal.current.ema50),
-      ema21: line(pal.current.ema21),
-      ema9: line(pal.current.ema9),
+      ema50: line(faint(pal.current.ema50)),
+      ema21: line(faint(pal.current.ema21)),
+      ema9: line(faint(pal.current.ema9)),
     };
     const s = c.addSeries(CandlestickSeries, {
       upColor: pal.current.up,
@@ -356,9 +386,9 @@ export default function CandleChart({
       rightPriceScale: { borderColor: C.line },
       timeScale: { borderColor: C.line },
     });
-    L.ema9.applyOptions({ color: C.ema9 });
-    L.ema21.applyOptions({ color: C.ema21 });
-    L.ema50.applyOptions({ color: C.ema50 });
+    L.ema9.applyOptions({ color: faint(C.ema9) });
+    L.ema21.applyOptions({ color: faint(C.ema21) });
+    L.ema50.applyOptions({ color: faint(C.ema50) });
     L.bbUp.applyOptions({ color: C.bb });
     L.bbDn.applyOptions({ color: C.bb });
     L.bbMid.applyOptions({ color: C.orange });
@@ -753,6 +783,24 @@ export default function CandleChart({
           text: r.result === "WIN" ? "✓" : r.result === "LOSS" ? "✗" : "=",
         });
     }
+    // Candle patterns: a dot on every one, the name on the newest ones that have room.
+    if (studies.has("candle")) {
+      const marks = candleMarks(bars, tf, tf === 1 ? 60 : 120);
+      let room = Infinity;
+      for (let k = marks.length - 1; k >= 0; k--) {
+        const { t, hit } = marks[k],
+          named = (room - t) / (tf * 60000) >= 8;
+        if (named) room = t;
+        out.push({
+          time: bucket(t),
+          position: hit.bias > 0 ? "belowBar" : "aboveBar",
+          shape: "circle",
+          size: 0.4,
+          color: hit.bias > 0 ? pal.current.up : pal.current.down,
+          text: named ? hit.name : undefined,
+        });
+      }
+    }
     const seen = new Set<string>();
     const unique = out.filter((m) => {
       const k = `${m.time}${m.shape}${m.text ?? ""}`;
@@ -762,7 +810,17 @@ export default function CandleChart({
     });
     unique.sort((a, b) => Number(a.time) - Number(b.time));
     markers.current.setMarkers(unique);
-  }, [data, focus, signals, minute, tf, theme, showTriggers, robotTrades]);
+  }, [
+    data,
+    focus,
+    signals,
+    minute,
+    tf,
+    theme,
+    showTriggers,
+    robotTrades,
+    studies,
+  ]);
   // Entry price of the robot's open trade on this asset.
   const robotLine = useRef<IPriceLine | undefined>(undefined),
     openTrade = robotTrades.find(

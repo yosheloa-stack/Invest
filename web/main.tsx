@@ -1,6 +1,8 @@
 import SignalHistory from "./SignalHistory";
 import OperationPlan from "./OperationPlan";
-import { PatternPanel, RadarPanel } from "./Radar";
+import { PatternPanel, RadarPanel, RadarWatcher } from "./Radar";
+import { installUnlock } from "./voice";
+installUnlock();
 import { Radar as RadarIcon } from "lucide-react";
 import { useChartFullscreen } from "./useChartFullscreen";
 import "./style.css";
@@ -272,6 +274,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         </main>
       </div>
       <RobotAlerts robot={state?.robot} now={serverNow} onOpen={open} />
+      <RadarWatcher />
       <SignalDock
         signals={state?.signals || []}
         fresh={fresh}

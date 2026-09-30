@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { CoinIcon } from "./Icons";
 import { MoneySettings } from "./Radar";
+import { entryPhrase, setVoice, speak, voiceOn } from "./voice";
 import { beep, unlockAudio } from "./SignalDock";
 import { STUDIES, studiesFor, type Study } from "./studies";
 import { liveBar, useTicks } from "./live";
@@ -163,6 +164,7 @@ export function RobotSide({
     be = data?.breakEven ?? 1 / 1.9,
     admin = user.role === "admin",
     [sound, setSound] = useState(soundOn),
+    [voiceOnNow, setVoiceOnNow] = useState(voiceOn),
     [saving, setSaving] = useState(false);
   const toggle = async () => {
     if (!brief) return;
@@ -299,6 +301,21 @@ export function RobotSide({
           await reload();
         }}
       />
+      <button
+        className={`rb-sound ${voiceOnNow ? "on" : ""}`}
+        onClick={() => {
+          const on = !voiceOnNow;
+          setVoice(on);
+          setVoiceOnNow(on);
+          if (on)
+            speak(
+              "Voz ligada. Exemplo: venda no Euro Libra, expiração 5 minutos",
+            );
+        }}
+      >
+        {voiceOnNow ? <Volume2 size={15} /> : <VolumeX size={15} />}
+        {voiceOnNow ? "Voz ligada: fala a entrada" : "Voz desligada"}
+      </button>
       <button className={`rb-sound ${sound ? "on" : ""}`} onClick={flipSound}>
         {sound ? <Volume2 size={15} /> : <VolumeX size={15} />}
         {sound ? "Som de compra e venda ligado" : "Som desligado"}
@@ -435,6 +452,7 @@ export function RobotAlerts({
         beep(up);
         setTimeout(() => beep(up), 220);
       }
+      speak(entryPhrase(x.t.direction, x.t.symbol, x.t.horizon));
       if ("Notification" in window && Notification.permission === "granted")
         try {
           new Notification(
