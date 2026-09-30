@@ -1,3 +1,4 @@
+import { famousStrategies } from "./famous.js";
 import { contextAllows, structuralStrategies } from "./price-context.js";
 import type { Candle, Horizon } from "./types.js";
 // Rule-based strategies on closed 1m candles, validated by chronological backtest.
@@ -468,6 +469,7 @@ export function catalog(): StrategySpec[] {
       ),
     );
   out.push(...structuralStrategies());
+  out.push(...famousStrategies());
   return out.map((spec) => ({
     ...spec,
     id: spec.id.includes(":ctx2")

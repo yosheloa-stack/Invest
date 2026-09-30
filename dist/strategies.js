@@ -1,3 +1,4 @@
+import { famousStrategies } from "./famous.js";
 import { contextAllows, structuralStrategies } from "./price-context.js";
 export const WARMUP = 300;
 function ema(a, n, alpha = 2 / (n + 1)) {
@@ -308,6 +309,7 @@ export function catalog() {
             return 0;
         }));
     out.push(...structuralStrategies());
+    out.push(...famousStrategies());
     return out.map((spec) => ({
         ...spec,
         id: spec.id.includes(":ctx2")

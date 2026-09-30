@@ -7,6 +7,7 @@ import {
   evaluateSymbol,
   wilson,
   levelsAt,
+  WARMUP,
 } from "../src/strategies.js";
 import { priceContext } from "../src/price-context.js";
 import type { Candle } from "../src/types.js";
@@ -122,5 +123,36 @@ test("drawn levels sit on both sides of price with at least two touches", () => 
   for (const x of lv) {
     assert.ok(x.touches >= 2);
     assert.equal(x.kind, x.price < s.c[s.c.length - 1] ? "sup" : "res");
+  }
+});
+test("famous indicator families exist, fire, and never look ahead", () => {
+  const cs = walk(3000, 11, 0.2),
+    all = catalog(),
+    fams = [
+      "supertrend",
+      "utbot",
+      "squeeze",
+      "ichimoku",
+      "stoch-rsi",
+      "macd",
+      "adx",
+      "heikin-ashi",
+      "donchian",
+      "psar",
+      "confluencia",
+    ];
+  const short = buildSeries(cs.slice(0, 2000)),
+    long = buildSeries(cs);
+  for (const f of fams) {
+    const specs = all.filter((x) => x.family === f);
+    assert.ok(specs.length >= 2, f);
+    let fired = 0;
+    for (const spec of specs)
+      for (let i = WARMUP; i < 2000; i++) {
+        const a = spec.signal(short, i);
+        assert.equal(a, spec.signal(long, i), `${spec.id} @${i}`);
+        if (a) fired++;
+      }
+    assert.ok(fired > 0, `${f} never fired`);
   }
 });

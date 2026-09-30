@@ -55,7 +55,13 @@ function byFamily(family: string | undefined): Study[] {
     case "rsi-bollinger":
       return ["rsi", "bb"];
     case "pullback":
+    case "confluencia":
       return ["ema"];
+    case "stoch-rsi":
+    case "macd":
+      return ["rsi"];
+    case "squeeze":
+      return ["bb"];
     case "vwap":
       return ["vwap"];
     case "fluxo":
@@ -98,6 +104,23 @@ export const FAMILY_TEXT: Record<string, string> = {
     "Espera o preço tocar um suporte ou resistência que já segurou o preço antes.",
   "sr-rompimento":
     "Espera o candle fechar além de um suporte ou resistência já testado.",
+  supertrend:
+    "SuperTrend (TradingView): faixa de ATR que segue o preço; entra quando a tendência vira.",
+  utbot:
+    "UT Bot Alerts (TradingView): stop móvel de ATR; entra quando o preço cruza o stop.",
+  squeeze:
+    "Squeeze Momentum (LazyBear): Bollinger dentro do Keltner é aperto; entra quando o aperto solta.",
+  ichimoku: "Ichimoku: Tenkan cruzando Kijun, ou fechamento saindo da nuvem.",
+  "stoch-rsi":
+    "Stoch RSI: a linha K cruza a D saindo da zona de sobrevenda ou sobrecompra.",
+  macd: "MACD 12/26/9: a linha cruza o sinal, com filtro do zero ou do RSI.",
+  adx: "ADX/DMI: +DI cruza -DI quando o ADX mostra tendência forte.",
+  "heikin-ashi": "Heikin Ashi: vira de cor com candle forte, sem pavio contra.",
+  donchian:
+    "Canal Donchian (Turtle): fechamento rompe a máxima ou mínima do canal.",
+  psar: "Parabolic SAR: entra quando os pontos trocam de lado.",
+  confluencia:
+    "Só entra quando SuperTrend, MACD, Ichimoku, Heikin Ashi e EMAs passam a concordar.",
 };
 export const directionText = (id: string) =>
   (id.includes(":reverter")
