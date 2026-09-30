@@ -228,6 +228,8 @@ export default function CandleChart({
         secondsVisible: false,
         rightOffset: 8,
         barSpacing: 7,
+        // Zoom (pinch or wheel) keeps the latest candle on the right edge.
+        rightBarStaysOnScroll: true,
         tickMarkFormatter: (t: Time) => hhmm(Number(t)),
       },
       localization: {
@@ -302,8 +304,10 @@ export default function CandleChart({
       setLegend(read(Math.min(view.current.length - 1, Math.round(e.logical))));
     };
     c.subscribeCrosshairMove(move);
+    c.timeScale().subscribeSizeChange(limitZoom);
     return () => {
       c.unsubscribeCrosshairMove(move);
+      c.timeScale().unsubscribeSizeChange(limitZoom);
       cancelAnimationFrame(anim.current);
       c.remove();
       chart.current = undefined;
@@ -482,6 +486,16 @@ export default function CandleChart({
     );
     rsi.current?.setData(at((i) => (p.rsi === 7 ? s.rsi7 : s.rsi14)[i]));
     if (!hover) setLegend(read(bars.length - 1));
+    limitZoom();
+  };
+  // Zooming out stops once every candle fits the width, so they never shrink
+  // into a thin strip with empty space beside them.
+  const limitZoom = () => {
+    const t = chart.current?.timeScale(),
+      w = t?.width() ?? 0,
+      n = view.current.length;
+    if (t && w > 0 && n > 1)
+      t.applyOptions({ minBarSpacing: Math.max(0.5, w / (n + 8)) });
   };
   const paintLast = () => {
     const L = lines.current,

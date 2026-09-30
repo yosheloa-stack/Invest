@@ -746,6 +746,8 @@ select {
 .chart-canvas {
   position: absolute;
   inset: 0;
+  /* Pinch on the chart zooms the candles, not the whole page (iPhone). */
+  touch-action: none;
 }
 .chart-note {
   position: absolute;
