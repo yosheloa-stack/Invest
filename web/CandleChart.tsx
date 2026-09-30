@@ -39,7 +39,7 @@ import {
   type Bar,
   type Study,
 } from "./studies";
-import type { CandleData, Evaluation, Signal } from "./types";
+import type { CandleData, Evaluation, RobotTrade, Signal } from "./types";
 import { PALETTE, useTheme, type Palette } from "./theme";
 const FRAMES = [1, 5, 15] as const;
 export type Frame = (typeof FRAMES)[number];
@@ -107,7 +107,9 @@ export default function CandleChart({
   head,
   expanded = false,
   onExpand,
+  robotTrades = [],
 }: {
+  robotTrades?: RobotTrade[];
   symbol: string;
   title: string;
   focus?: Evaluation;
@@ -689,6 +691,31 @@ export default function CandleChart({
                 : "Neutro",
         });
     }
+    for (const r of robotTrades) {
+      if (r.symbol !== symbol || r.openedAt < first) continue;
+      const buy = r.direction === "COMPRA";
+      out.push({
+        time: bucket(r.openedAt),
+        position: buy ? "belowBar" : "aboveBar",
+        shape: buy ? "arrowUp" : "arrowDown",
+        color: buy ? pal.current.up : pal.current.down,
+        size: 1.4,
+        text: `Robô ${buy ? "compra" : "venda"} ${r.horizon}m`,
+      });
+      if (r.status === "FECHADA" && r.closedAt)
+        out.push({
+          time: bucket(r.closedAt),
+          position: "inBar",
+          shape: "square",
+          color: r.result === "WIN" ? pal.current.blue : pal.current.muted,
+          text:
+            r.result === "WIN"
+              ? "Ganhou"
+              : r.result === "LOSS"
+                ? "Perdeu"
+                : "Empate",
+        });
+    }
     const seen = new Set<string>();
     const unique = out.filter((m) => {
       const k = `${m.time}${m.shape}${m.text ?? ""}`;
@@ -698,7 +725,28 @@ export default function CandleChart({
     });
     unique.sort((a, b) => Number(a.time) - Number(b.time));
     markers.current.setMarkers(unique);
-  }, [data, focus, signals, minute, tf, theme, showTriggers]);
+  }, [data, focus, signals, minute, tf, theme, showTriggers, robotTrades]);
+  // Entry price of the robot's open trade on this asset.
+  const robotLine = useRef<IPriceLine | undefined>(undefined),
+    openTrade = robotTrades.find(
+      (r) => r.symbol === symbol && r.status === "ABERTA",
+    );
+  useEffect(() => {
+    const c = candles.current;
+    if (!c) return;
+    if (robotLine.current) c.removePriceLine(robotLine.current);
+    robotLine.current = undefined;
+    if (!openTrade) return;
+    const buy = openTrade.direction === "COMPRA";
+    robotLine.current = c.createPriceLine({
+      price: openTrade.entry,
+      color: buy ? pal.current.up : pal.current.down,
+      lineWidth: 2,
+      lineStyle: LineStyle.Solid,
+      axisLabelVisible: true,
+      title: `Robô ${buy ? "compra" : "venda"} ${openTrade.horizon}m`,
+    });
+  }, [openTrade?.id, theme, data]);
   // Support/resistance of the visible timeframe as price lines, plus the market reading.
   useEffect(() => {
     const c = candles.current;

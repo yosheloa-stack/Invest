@@ -495,3 +495,167 @@ export function RobotMini({
     </button>
   );
 }
+export type RobotRead = {
+  enabled: boolean;
+  ai: boolean;
+  labReady: boolean;
+  labStatus: string;
+  read: MarketRead | null;
+  trades: RobotTrade[];
+};
+// Live reading of the chart's asset; refreshes on every pair change and every 15s.
+export function useRobotRead(symbol: string) {
+  const [data, setData] = useState<RobotRead | null>(null);
+  useEffect(() => {
+    let stop = false;
+    setData(null);
+    const load = () =>
+      api<RobotRead>(`/api/robot/read/${symbol}`)
+        .then((x) => !stop && setData(x))
+        .catch(() => undefined);
+    void load();
+    const t = setInterval(load, 15000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [symbol]);
+  return data;
+}
+// The robot working on the chart screen: what it sees on this pair, its verdict and its trade.
+export function RobotLive({
+  symbol,
+  data,
+  now,
+}: {
+  symbol: string;
+  data: RobotRead | null;
+  now: number;
+}) {
+  useTicks();
+  const [ai, setAi] = useState<{ symbol: string; text: string } | null>(null),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState<string | null>(null),
+    [more, setMore] = useState(false);
+  useEffect(() => {
+    setAi(null);
+    setError(null);
+  }, [symbol]);
+  const r = data?.read,
+    open = data?.trades.find((t) => t.status === "ABERTA"),
+    done = data?.trades.filter((t) => t.status === "FECHADA") ?? [],
+    wins = done.filter((t) => t.result === "WIN").length,
+    losses = done.filter((t) => t.result === "LOSS").length;
+  const ask = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const x = await api<{ text: string | null; aiError: string | null }>(
+        "/api/robot/analyze",
+        { method: "POST", body: JSON.stringify({ symbol }) },
+      );
+      if (x.text) setAi({ symbol, text: x.text });
+      else setError(x.aiError || "IA sem resposta agora");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const c = liveBar(symbol)?.c ?? null,
+    move =
+      open && c != null
+        ? (c - open.entry) * (open.direction === "COMPRA" ? 1 : -1)
+        : 0;
+  const lines = r?.lines.slice(0, -1) ?? [];
+  return (
+    <section className="rb-live" aria-live="polite">
+      <header>
+        <span className={`rb-dot ${data?.enabled ? "on" : ""}`} />
+        <b>Robô IA</b>
+        <span className="muted">
+          {!data
+            ? "carregando…"
+            : !data.enabled
+              ? "pausado"
+              : `analisando ${pair(symbol)} a cada candle`}
+        </span>
+        {done.length > 0 && (
+          <span className="rb-live-score">
+            neste par {wins}/{wins + losses}
+          </span>
+        )}
+      </header>
+      {open ? (
+        <div
+          className={`rb-live-trade ${move > 0 ? "win" : move < 0 ? "lose" : ""}`}
+        >
+          <Dir d={open.direction} />
+          <span>
+            Entrou em <b>{price(open.entry)}</b> · agora <b>{price(c)}</b>
+          </span>
+          <b className={move > 0 ? "up" : move < 0 ? "down" : "muted"}>
+            {move > 0 ? "Ganhando" : move < 0 ? "Perdendo" : "Empatado"}
+          </b>
+          <strong className="rb-count">{countdown(open.due - now)}</strong>
+        </div>
+      ) : r ? (
+        <div className="rb-live-verdict">
+          {r.pick && data?.labReady ? (
+            <>
+              <Dir d={r.pick.direction} />
+              <b>Expiração {r.pick.horizon} min</b>
+              <span className="muted">força {pct(r.pick.score)}</span>
+            </>
+          ) : (
+            <b>Esperar</b>
+          )}
+          <span className={`rb-trend ${r.trend.toLowerCase()}`}>
+            Tendência {r.trend.toLowerCase()}
+          </span>
+        </div>
+      ) : null}
+      {r ? (
+        <>
+          <p className="rb-live-why">
+            {open
+              ? `Entrou pelo gatilho ${open.strategy}${open.ai ? ` · IA ${open.ai.confidence}%: ${open.ai.reason}` : ""}.`
+              : data?.labReady
+                ? r.why
+                : `Lendo o gráfico; entradas liberadas quando o backtest terminar (${sentence(data?.labStatus)}).`}
+          </p>
+          <ul className="rb-lines">
+            {(more ? lines : lines.slice(0, 3)).map((l, i) => (
+              <li key={i}>{l}</li>
+            ))}
+          </ul>
+          {lines.length > 3 && (
+            <button className="link" onClick={() => setMore(!more)}>
+              {more ? "Mostrar menos" : `Ver mais ${lines.length - 3}`}
+            </button>
+          )}
+        </>
+      ) : (
+        data && <p className="muted">Juntando candles para ler este par…</p>
+      )}
+      {ai?.symbol === symbol && (
+        <div className="rb-text">
+          <small>Análise da IA</small>
+          {ai.text
+            .split("\n")
+            .filter(Boolean)
+            .map((l, i) => (
+              <p key={i}>{l}</p>
+            ))}
+        </div>
+      )}
+      {error && <p className="muted">{error}</p>}
+      {data?.ai && r && (
+        <button className="rb-ask-ai" onClick={ask} disabled={busy}>
+          <Sparkles size={14} />
+          {busy ? "A IA está analisando…" : "Pedir análise da IA para este par"}
+        </button>
+      )}
+    </section>
+  );
+}

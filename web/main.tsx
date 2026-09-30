@@ -36,7 +36,7 @@ import { lastMove, liveBar, pushTick, useTicks, lastServerTime } from "./live";
 import { FAMILY_TEXT, directionText } from "./studies";
 import CandleChart from "./CandleChart";
 import SignalDock from "./SignalDock";
-import RobotView, { RobotMini } from "./RobotView";
+import RobotView, { RobotLive, RobotMini, useRobotRead } from "./RobotView";
 import {
   api,
   clock,
@@ -455,7 +455,30 @@ function TradeView({
   useTicks();
   const fullscreen = useChartFullscreen();
   const [focusId, setFocusId] = useState<string | null>(null),
-    [side, setSide] = useState<SideTab>("strat");
+    [side, setSide] = useState<SideTab>("strat"),
+    robotRead = useRobotRead(selected);
+  // Trades pushed over the socket show up at once; the per-pair read refreshes every 15s.
+  const liveOpenKey = JSON.stringify(
+    (state?.robot?.open || [])
+      .filter((t) => t.symbol === selected)
+      .map((t) => t.id),
+  );
+  const robotTrades = useMemo(() => {
+    const liveOpen = (state?.robot?.open || []).filter(
+      (t) => t.symbol === selected,
+    );
+    return [
+      ...liveOpen,
+      ...(robotRead?.trades || []).filter(
+        (t) => !liveOpen.some((o) => o.id === t.id) && t.status !== "ABERTA",
+      ),
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveOpenKey, robotRead, selected]);
+  const robotView = useMemo(
+    () => robotRead && { ...robotRead, trades: robotTrades },
+    [robotRead, robotTrades],
+  );
   const evals = useMemo(
     () =>
       (lab?.evaluations || [])
@@ -508,6 +531,7 @@ function TradeView({
           symbol={asset.symbol}
           title={pair(asset.symbol).replace("/", "")}
           focus={focus}
+          robotTrades={robotTrades}
           signals={state.signals.filter((s) => s.symbol === asset.symbol)}
           head={
             <SymbolPicker
@@ -517,6 +541,7 @@ function TradeView({
             />
           }
         />
+        <RobotLive symbol={asset.symbol} data={robotView} now={now} />
         <OperationPlan
           asset={asset}
           signals={state.signals}

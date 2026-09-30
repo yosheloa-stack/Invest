@@ -1801,6 +1801,109 @@ tr.ok td {
 .rb-mini:hover {
   background: var(--hover);
 }
+.rb-live {
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
+  background: var(--surface);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+.rb-live header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.rb-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.rb-dot.on {
+  background: var(--accent);
+  box-shadow: 0 0 0 0 var(--accent);
+  animation: rb-blink 1.6s ease-out infinite;
+}
+@keyframes rb-blink {
+  from {
+    box-shadow: 0 0 0 0 var(--accent-soft);
+  }
+  to {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rb-dot.on {
+    animation: none;
+  }
+}
+.rb-live-score {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--soft);
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  padding: 1px 7px;
+}
+.rb-live-verdict,
+.rb-live-trade {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 15px;
+}
+.rb-live-verdict .rb-trend {
+  margin-left: auto;
+}
+.rb-live-trade {
+  font-size: 13.5px;
+  border-left: 3px solid var(--line-2);
+  padding: 6px 10px;
+  background: var(--raised);
+  border-radius: 0 var(--r) var(--r) 0;
+}
+.rb-live-trade.win {
+  border-left-color: var(--up);
+}
+.rb-live-trade.lose {
+  border-left-color: var(--down);
+}
+.rb-live-trade .rb-count {
+  font-size: 16px;
+}
+.rb-live-why {
+  font-size: 13.5px;
+  color: var(--text);
+}
+.rb-live .rb-lines {
+  font-size: 12.5px;
+}
+.rb-live .link {
+  justify-self: start;
+  font-size: 12.5px;
+}
+.rb-ask-ai {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--accent);
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border-radius: var(--r);
+  padding: 7px 12px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.rb-ask-ai:disabled {
+  opacity: 0.6;
+}
 @media (max-width: 1080px) {
   .rb-grid {
     grid-template-columns: 1fr;

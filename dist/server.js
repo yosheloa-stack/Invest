@@ -231,6 +231,21 @@ app.post("/api/robot/toggle", express.json({ limit: "1kb" }), auth.requireAdmin,
     robot.status = robot.enabled ? "PROCURANDO OPORTUNIDADE" : "PAUSADO";
     res.json({ enabled: robot.enabled });
 });
+// Live reading of one asset for the chart screen (rules only, no AI budget spent).
+app.get("/api/robot/read/:symbol", (req, res) => {
+    const symbol = String(req.params.symbol).toUpperCase();
+    if (!robot || !market.states.has(symbol))
+        return void res.status(404).json({ error: "Ativo não monitorado" });
+    const read = robot.read(symbol, closedCandles(symbol));
+    res.json({
+        enabled: robot.enabled,
+        ai: robot.ai.enabled,
+        labReady: lab.evaluations.length > 0,
+        labStatus: lab.status,
+        read,
+        trades: robot.trades.filter((t) => t.symbol === symbol).slice(0, 20),
+    });
+});
 app.post("/api/robot/analyze", express.json({ limit: "1kb" }), async (req, res) => {
     const symbol = String(req.body?.symbol || "").toUpperCase();
     if (!robot || !market.states.has(symbol))
