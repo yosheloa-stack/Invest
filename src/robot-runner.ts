@@ -14,6 +14,7 @@ import {
   type RobotTrade,
 } from "./robot.js";
 type PriceOf = (symbol: string) => { p: number; t: number } | null;
+type CandleAt = (symbol: string, t: number) => Candle | null;
 // Runs the simulated operator: one open trade per asset, settles at expiry from the live price.
 export class Robot {
   enabled = config.ROBOT_ENABLED;
@@ -30,6 +31,7 @@ export class Robot {
   constructor(
     private db: SQLiteConnection,
     private lab: StrategyLab,
+    private clock: () => number = Date.now,
   ) {}
   get breakEven() {
     return 1 / (1 + config.PAYOUT);
@@ -41,19 +43,13 @@ export class Robot {
       minScore: Math.max(config.ROBOT_MIN_WINRATE, this.breakEven),
     };
   }
-  load(now: number) {
+  // Trades left open by a restart are settled by settle() from the reloaded candles.
+  load() {
     this.trades = this.db
       .query("SELECT body FROM robot_trades ORDER BY opened_at DESC LIMIT 3000")
       .rows.map((r) =>
         typeof r.body === "string" ? JSON.parse(r.body) : r.body,
       );
-    for (const t of this.trades)
-      if (t.status === "ABERTA" && now > t.due + 60000)
-        this.save({
-          ...t,
-          status: "CANCELADA",
-          note: "App reiniciou durante a operação",
-        });
   }
   private save(t: RobotTrade) {
     this.db.query(
@@ -90,22 +86,32 @@ export class Robot {
     );
   }
   // Called every second: closes trades whose expiry has passed.
-  settle(now: number, priceOf: PriceOf) {
+  settle(now: number, priceOf: PriceOf, candleAt: CandleAt) {
     let changed = false;
     for (const t of this.open) {
       if (now < t.due) continue;
       const q = priceOf(t.symbol);
-      if (q && q.t >= t.due && q.t - t.due <= 5000) {
+      if (q && q.t >= t.due && q.t - t.due <= 30000) {
         this.save(settleTrade(t, q.p, q.t));
         changed = true;
-      } else if (now > t.due + 60000) {
-        this.save({
-          ...t,
-          status: "CANCELADA",
-          note: "Sem cotação no vencimento",
-        });
-        changed = true;
+        continue;
       }
+      if (now < t.due + 90000) continue;
+      // Live price missed the expiry (restart or feed gap): use the 1m candle that contains it.
+      const c = candleAt(t.symbol, t.due);
+      this.save(
+        c
+          ? {
+              ...settleTrade(t, c.c, c.end),
+              note: "Saída pelo fechamento do candle do vencimento",
+            }
+          : {
+              ...t,
+              status: "CANCELADA",
+              note: "Sem cotação no vencimento",
+            },
+      );
+      changed = true;
     }
     return changed;
   }
@@ -114,12 +120,17 @@ export class Robot {
     const last = closed[closed.length - 1];
     if (!last || last.t <= (this.seen.get(symbol) ?? 0)) return;
     this.seen.set(symbol, last.t);
-    if (!this.lab.evaluations.length) {
-      this.status = `AGUARDANDO LABORATÓRIO: ${this.lab.status}`;
-      return;
-    }
     const read = this.read(symbol, closed);
     if (!read) return;
+    // Without the backtest table the robot still reads the chart but never enters.
+    if (!this.lab.evaluations.length) {
+      this.status = `AGUARDANDO LABORATÓRIO: ${this.lab.status}`;
+      this.reads.set(symbol, {
+        ...read,
+        why: "Lendo o gráfico; entradas liberadas quando o backtest terminar.",
+      });
+      return;
+    }
     this.reads.set(symbol, read);
     this.status = this.enabled
       ? this.open.length
@@ -154,7 +165,7 @@ export class Robot {
           return;
         }
         const q = priceOf(symbol),
-          at = Date.now();
+          at = this.clock();
         // The opportunity is only valid right after the candle closed.
         if (!q || at - last.end > 30000 || at - q.t > config.STALE_MS) return;
         if (this.open.some((t) => t.symbol === symbol)) return;

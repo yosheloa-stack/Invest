@@ -75,6 +75,8 @@ body {
 }
 body {
   min-height: 100vh;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 button,
 input,
@@ -1506,6 +1508,9 @@ tr.ok td {
   border-bottom: 1px solid var(--line);
 }
 /* Robô IA */
+.content > * {
+  min-width: 0;
+}
 .rb-hero {
   display: flex;
   align-items: center;
@@ -1801,10 +1806,49 @@ tr.ok td {
     grid-template-columns: 1fr;
   }
 }
+.rb-list {
+  display: none;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.rb-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.rb-list li > div {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.rb-list li > b,
+.rb-list li > span {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 @media (max-width: 760px) {
+  .rb-table {
+    display: none;
+  }
+  .rb-list {
+    display: block;
+  }
   .rb-hero {
     flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 12px 14px;
     padding: 16px;
+  }
+  .rb-avatar {
+    width: 44px;
+    height: 44px;
+  }
+  .rb-hero-text h1 {
+    font-size: 20px;
   }
   .rb-toggle {
     width: 100%;

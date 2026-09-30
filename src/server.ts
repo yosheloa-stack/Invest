@@ -255,6 +255,10 @@ function closedCandles(symbol: string) {
     now = market.rest.now();
   return s ? s.candles["1m"].filter((c) => c.end < now) : [];
 }
+function candleAt(symbol: string, t: number) {
+  const s = market.states.get(symbol);
+  return s?.candles["1m"].find((c) => c.t <= t && t <= c.end) ?? null;
+}
 function priceOf(symbol: string) {
   const s = market.states.get(symbol);
   if (!s?.trade || market.reasons(s).length) return null;
@@ -283,10 +287,6 @@ app.post(
     if (!robot || !market.states.has(symbol))
       return void res.status(404).json({ error: "Ativo não monitorado" });
     const closed = closedCandles(symbol);
-    if (!lab.evaluations.length)
-      return void res
-        .status(503)
-        .json({ error: "Aguardando o laboratório terminar o backtest" });
     const read = robot.read(symbol, closed);
     if (!read)
       return void res
@@ -396,8 +396,8 @@ async function initialize() {
       `${s.symbol}:${s.horizon}`,
       Math.max(cooldowns.get(`${s.symbol}:${s.horizon}`) || 0, s.t),
     );
-  robot = new Robot(store.pool, lab);
-  robot.load(market.rest.now());
+  robot = new Robot(store.pool, lab, () => market.rest.now());
+  robot.load();
   await market.start();
   lab.start();
   initialized = true;
@@ -583,7 +583,7 @@ async function tick() {
       }
     }
     if (robot && store.healthy) {
-      robot.settle(market.rest.now(), priceOf);
+      robot.settle(market.rest.now(), priceOf, candleAt);
       for (const s of cycle)
         if (!market.reasons(s).length)
           robot.onCandle(

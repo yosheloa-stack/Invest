@@ -416,6 +416,44 @@ export default function RobotView({
             </tbody>
           </table>
         </div>
+        <ul className="rb-list">
+          {(data?.trades || [])
+            .filter((t) => t.status !== "ABERTA")
+            .slice(0, 50)
+            .map((t) => (
+              <li key={t.id}>
+                <CoinIcon symbol={t.symbol} size={20} />
+                <div>
+                  <p>
+                    <b>{ticker(t.symbol)}</b> <Dir d={t.direction} />{" "}
+                    <span className="muted">{t.horizon} min</span>
+                  </p>
+                  <small className="muted">
+                    {clock(t.openedAt)} · {price(t.entry)} → {price(t.exit)}
+                  </small>
+                  <small className="muted">
+                    {t.note ?? t.strategy}
+                    {t.ai ? ` · IA ${t.ai.confidence}%` : ""}
+                  </small>
+                </div>
+                {t.status === "CANCELADA" ? (
+                  <span className="muted">Cancelada</span>
+                ) : (
+                  <b
+                    className={
+                      t.result === "WIN"
+                        ? "up"
+                        : t.result === "LOSS"
+                          ? "down"
+                          : "muted"
+                    }
+                  >
+                    {money(t.profit, true)}
+                  </b>
+                )}
+              </li>
+            ))}
+        </ul>
         {!data?.trades.some((t) => t.status !== "ABERTA") && (
           <p className="muted pad">
             As operações aparecem aqui quando vencerem.
