@@ -110,7 +110,7 @@ function OpenTrade({ t, now }: { t: RobotTrade; now: number }) {
     </div>
   );
 }
-const EXPIRIES = [1, 5, 10, 15];
+const EXPIRIES = [5, 10, 15];
 const LEVELS: { id: RobotBrief["level"]; label: string; text: string }[] = [
   {
     id: "alta",

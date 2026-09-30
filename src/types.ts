@@ -2,8 +2,8 @@ export type Horizon = 1 | 5 | 10 | 15;
 // Expiries of the forecast/signal pipeline.
 export const HORIZONS: Horizon[] = [5, 10, 15];
 // Expiries the strategy lab and the robot test; Ebinex offers M1, M5 and M15.
-export const STRATEGY_HORIZONS: Horizon[] = [1, 5, 10, 15];
-export const ROBOT_DEFAULT_HORIZONS: Horizon[] = [1, 5, 15];
+export const STRATEGY_HORIZONS: Horizon[] = [5, 10, 15];
+export const ROBOT_DEFAULT_HORIZONS: Horizon[] = [5, 10, 15];
 export type TF = "1m" | "5m" | "15m" | "1h";
 export const INTERVALS: Record<TF, number> = {
   "1m": 60000,

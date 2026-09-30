@@ -7,6 +7,31 @@ export const liveKey = (id, symbol, h) => `${id}|${symbol}|${h}`;
 const fmt = (n) => n.toLocaleString("pt-BR", {
     maximumFractionDigits: n >= 1000 ? 2 : n >= 1 ? 4 : 6,
 });
+// Direction of a higher timeframe built from the 1m candles: price above EMA21 above EMA50 is up.
+export function bias(closed, minutes) {
+    const size = minutes * 60000, bars = [];
+    for (const c of closed.slice(-minutes * 300)) {
+        const t = Math.floor(c.t / size) * size, last = bars[bars.length - 1];
+        if (last && last.t === t) {
+            last.h = Math.max(last.h, c.h);
+            last.l = Math.min(last.l, c.l);
+            last.c = c.c;
+            last.v += c.v;
+            last.buy += c.buy;
+            last.end = c.end;
+        }
+        else
+            bars.push({ ...c, t });
+    }
+    if (bars.length < 60)
+        return 0;
+    const s = buildSeries(bars), i = s.c.length - 1;
+    if (s.c[i] > s.ema21[i] && s.ema21[i] > s.ema50[i])
+        return 1;
+    if (s.c[i] < s.ema21[i] && s.ema21[i] < s.ema50[i])
+        return -1;
+    return 0;
+}
 const pctTxt = (n) => `${(n * 100).toFixed(1).replace(".", ",")}%`;
 // Pure: everything the robot decides comes from closed candles, the backtest table and its own record.
 export function readMarket(symbol, closed, evaluations, live, o) {
@@ -22,6 +47,9 @@ export function readMarket(symbol, closed, evaluations, live, o) {
         : Number.isFinite(x.resistance)
             ? x.resistance
             : null, rsi = Number.isFinite(s.rsi14[i]) ? s.rsi14[i] : null;
+    const b5 = bias(closed, 5), b15 = bias(closed, 15);
+    // Never enter against the 5 or 15-minute trend, whatever the 1m trigger says.
+    const against = (d) => (b5 && b5 !== d) || (b15 && b15 !== d);
     const fired = [];
     for (const e of evaluations) {
         if (e.symbol !== symbol)
@@ -47,16 +75,21 @@ export function readMarket(symbol, closed, evaluations, live, o) {
             // Backtest and the robot's own results pooled; a small sample is pulled toward 50%.
             score: (btW + r.wins + 1) / (btN + r.trades + 2),
             paused: r.trades >= 10 && r.wins / r.trades < o.breakEven - 0.05,
+            against: Boolean(against(d)),
         });
     }
     fired.sort((a, b) => Number(b.approved) - Number(a.approved) || b.score - a.score);
     const eligible = fired.filter((f) => !f.paused &&
+        !f.against &&
         f.backtestTrades >= o.minTrades &&
         f.score >= o.minScore &&
         (!o.horizons || o.horizons.includes(f.horizon)));
     let pick = null, why;
     if (!fired.length)
         why = "Nenhum gatilho disparou neste candle.";
+    else if (fired.every((f) => f.against))
+        why =
+            "Gatilho disparou contra a tendência de 5/15 min; o robô fica de fora.";
     else if (!eligible.length)
         why = `Gatilho disparou, mas nenhum tem histórico acima do mínimo escolhido (${pctTxt(o.minScore)}).`;
     else if (eligible.some((f) => f.direction !== eligible[0].direction))
@@ -72,6 +105,8 @@ export function readMarket(symbol, closed, evaluations, live, o) {
                 : "Mercado sem tendência clara."
             : `Tendência de ${trend.toLowerCase()} (médias 9, 21 e 50 alinhadas).`,
     ];
+    const biasTxt = (b) => b === 1 ? "alta" : b === -1 ? "baixa" : "lateral";
+    lines.push(`Tendência maior: 5 min em ${biasTxt(b5)}, 15 min em ${biasTxt(b15)}.`);
     if (support != null)
         lines.push(`Suporte em ${fmt(support)} (${pctTxt((price - support) / price)} abaixo).`);
     if (resistance != null)

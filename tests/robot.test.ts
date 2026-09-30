@@ -117,3 +117,34 @@ test("binary settlement and stats", () => {
   assert.equal(s.balance, 1006);
   assert.equal(s.winRate, 2 / 3);
 });
+test("robot: higher-timeframe bias follows a steady trend", async () => {
+  const { bias } = await import("../src/robot.js");
+  const up = Array.from({ length: 1500 }, (_, i) => {
+    const c = 100 + i * 0.05 + Math.sin(i / 7) * 0.2;
+    return {
+      t: i * 60000,
+      end: i * 60000 + 59999,
+      o: c - 0.02,
+      h: c + 0.1,
+      l: c - 0.1,
+      c,
+      v: 10,
+      buy: 5,
+      quote: 0,
+    };
+  });
+  assert.equal(bias(up, 5), 1);
+  assert.equal(
+    bias(
+      up.map((x) => ({
+        ...x,
+        o: 300 - x.o,
+        h: 300 - x.l,
+        l: 300 - x.h,
+        c: 300 - x.c,
+      })),
+      5,
+    ),
+    -1,
+  );
+});

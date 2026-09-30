@@ -667,7 +667,7 @@ export default function CandleChart({
           time: bucket(s.t[i]),
           position: buy ? "belowBar" : "aboveBar",
           shape: buy ? "arrowUp" : "arrowDown",
-          size: focus.approved ? 1 : 0.8,
+          size: focus.approved ? 0.8 : 0.6,
           color: fade(buy ? pal.current.up : pal.current.down),
           text: named.has(k)
             ? `${buy ? "Compra" : "Venda"} ${focus.horizon}m${focus.approved ? "" : " · estudo"}`
@@ -688,7 +688,7 @@ export default function CandleChart({
         position: buy ? "belowBar" : "aboveBar",
         shape: buy ? "arrowUp" : "arrowDown",
         color: buy ? pal.current.up : pal.current.down,
-        size: 1.4,
+        size: 1,
         text: `${buy ? "Compra" : "Venda"} ${s.horizon}m`,
       });
       if (s.status === "SETTLED" && s.exitAt)
@@ -713,8 +713,12 @@ export default function CandleChart({
         position: buy ? "belowBar" : "aboveBar",
         shape: buy ? "arrowUp" : "arrowDown",
         color: buy ? pal.current.up : pal.current.down,
-        size: 1.4,
-        text: `Robô ${buy ? "compra" : "venda"} ${r.horizon}m`,
+        size: r.status === "ABERTA" ? 1.2 : 0.7,
+        // Only the open trade is labelled; past entries stay as small arrows.
+        text:
+          r.status === "ABERTA"
+            ? `Robô ${buy ? "compra" : "venda"} ${r.horizon}m`
+            : undefined,
       });
       if (r.status === "FECHADA" && r.closedAt)
         out.push({
@@ -722,12 +726,8 @@ export default function CandleChart({
           position: "inBar",
           shape: "square",
           color: r.result === "WIN" ? pal.current.blue : pal.current.muted,
-          text:
-            r.result === "WIN"
-              ? "Ganhou"
-              : r.result === "LOSS"
-                ? "Perdeu"
-                : "Empate",
+          size: 0.5,
+          text: r.result === "WIN" ? "✓" : r.result === "LOSS" ? "✗" : "=",
         });
     }
     const seen = new Set<string>();
@@ -780,8 +780,8 @@ export default function CandleChart({
           title,
         }),
       );
-    add(robotLevels?.support, "Robô suporte", pal.current.up);
-    add(robotLevels?.resistance, "Robô resistência", pal.current.down);
+    add(robotLevels?.support, "Robô S", pal.current.up);
+    add(robotLevels?.resistance, "Robô R", pal.current.down);
   }, [robotLevels?.support, robotLevels?.resistance, theme, data]);
   // Support/resistance of the visible timeframe as price lines, plus the market reading.
   useEffect(() => {
