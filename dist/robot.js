@@ -50,7 +50,10 @@ export function readMarket(symbol, closed, evaluations, live, o) {
         });
     }
     fired.sort((a, b) => Number(b.approved) - Number(a.approved) || b.score - a.score);
-    const eligible = fired.filter((f) => !f.paused && f.backtestTrades >= o.minTrades && f.score >= o.minScore);
+    const eligible = fired.filter((f) => !f.paused &&
+        f.backtestTrades >= o.minTrades &&
+        f.score >= o.minScore &&
+        (!o.horizons || o.horizons.includes(f.horizon)));
     let pick = null, why;
     if (!fired.length)
         why = "Nenhum gatilho disparou neste candle.";

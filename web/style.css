@@ -2387,3 +2387,250 @@ tr.ok td {
 .tab-history .panel-head {
   flex-wrap: wrap;
 }
+/* Robot panel on the chart screen */
+.tv-tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tv-tabs button {
+  flex: 1 0 auto;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.rb-side {
+  display: grid;
+  gap: 12px;
+  padding: 12px 14px 20px;
+}
+.rb-side-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.rb-side-head > div:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.rb-avatar.small {
+  width: 36px;
+  height: 36px;
+}
+.rb-side .rb-toggle {
+  padding: 7px 10px;
+  width: auto;
+}
+.rb-setting {
+  display: grid;
+  gap: 6px;
+  font-size: 12.5px;
+}
+.rb-exp {
+  display: flex;
+  gap: 6px;
+}
+.rb-exp button {
+  flex: 1;
+  border: 1px solid var(--line-2);
+  background: var(--raised);
+  color: var(--muted);
+  border-radius: var(--r);
+  padding: 8px 0;
+  font-weight: 600;
+}
+.rb-exp button.on {
+  color: var(--accent-text);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.rb-exp button:disabled {
+  cursor: default;
+}
+.rb-sound {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--line-2);
+  background: var(--raised);
+  color: var(--muted);
+  border-radius: var(--r);
+  padding: 9px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.rb-sound.on {
+  color: var(--up-text);
+  border-color: var(--up);
+  background: var(--up-soft);
+}
+.rb-mini-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+.rb-mini-stats > div {
+  background: var(--surface);
+  padding: 8px 10px;
+  display: grid;
+  gap: 2px;
+}
+.rb-mini-stats span {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.rb-mini-stats b {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.rb-note {
+  font-size: 12px;
+  margin: -4px 0 0;
+}
+.rb-side-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 4px 0 -4px;
+}
+.rb-open-btn {
+  display: block;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: none;
+  text-align: left;
+  color: inherit;
+}
+.rb-side .rb-list {
+  display: block;
+}
+.rb-side .rb-list li {
+  cursor: pointer;
+}
+.rb-uses {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.rb-uses > span:not(.muted) {
+  border: 1px solid var(--accent);
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+/* Robot buy/sell warning */
+.rb-alerts {
+  position: fixed;
+  top: calc(var(--top, 48px) + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: grid;
+  gap: 8px;
+  width: min(460px, calc(100vw - 24px));
+}
+.rb-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px 10px 14px;
+  border-radius: var(--r);
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  animation: rb-in 0.25s ease-out;
+}
+.rb-alert.buy {
+  border-color: var(--up);
+  background: linear-gradient(var(--up-soft), var(--up-soft)), var(--surface);
+}
+.rb-alert.sell {
+  border-color: var(--down);
+  background:
+    linear-gradient(var(--down-soft), var(--down-soft)), var(--surface);
+}
+.rb-alert.buy svg:first-child {
+  color: var(--up-text);
+}
+.rb-alert.sell svg:first-child {
+  color: var(--down-text);
+}
+.rb-alert-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+}
+.rb-alert-main > span {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.rb-alert-main strong {
+  font-size: 17px;
+  letter-spacing: 0.01em;
+}
+.rb-alert.buy strong {
+  color: var(--up-text);
+}
+.rb-alert.sell strong {
+  color: var(--down-text);
+}
+.rb-alert-main small {
+  color: var(--soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rb-alert-main em {
+  font-style: normal;
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.rb-alert.result b {
+  flex: 1;
+}
+.rb-alert.result.win {
+  border-color: var(--up);
+}
+.rb-alert.result.win > span {
+  color: var(--up-text);
+}
+.rb-alert.result.lose {
+  border-color: var(--down);
+}
+.rb-alert.result.lose > span {
+  color: var(--down-text);
+}
+@keyframes rb-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rb-alert {
+    animation: none;
+  }
+}
+.tv-tabs button svg {
+  display: none;
+}

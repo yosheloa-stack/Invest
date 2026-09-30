@@ -62,6 +62,7 @@ export interface RobotOptions {
   breakEven: number;
   minTrades: number;
   minScore: number;
+  horizons?: readonly number[];
 }
 const specs = new Map(catalog().map((x) => [x.id, x]));
 export const liveKey = (id: string, symbol: string, h: number) =>
@@ -129,7 +130,10 @@ export function readMarket(
   );
   const eligible = fired.filter(
     (f) =>
-      !f.paused && f.backtestTrades >= o.minTrades && f.score >= o.minScore,
+      !f.paused &&
+      f.backtestTrades >= o.minTrades &&
+      f.score >= o.minScore &&
+      (!o.horizons || o.horizons.includes(f.horizon)),
   );
   let pick: Fired | null = null,
     why: string;

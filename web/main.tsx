@@ -36,7 +36,13 @@ import { lastMove, liveBar, pushTick, useTicks, lastServerTime } from "./live";
 import { FAMILY_TEXT, directionText } from "./studies";
 import CandleChart from "./CandleChart";
 import SignalDock from "./SignalDock";
-import RobotView, { RobotLive, RobotMini, useRobotRead } from "./RobotView";
+import {
+  RobotAlerts,
+  RobotLive,
+  RobotSide,
+  robotStudies,
+  useRobotRead,
+} from "./RobotView";
 import {
   api,
   clock,
@@ -51,10 +57,9 @@ import {
 import type { Evaluation, Lab, Metric, News, State, User } from "./types";
 const Scene3D = lazy(() => import("./Scene3D"));
 const Market3D = lazy(() => import("./Market3D"));
-type Tab = "trade" | "robot" | "lab" | "history" | "news" | "stats" | "system";
+type Tab = "trade" | "lab" | "history" | "news" | "stats" | "system";
 const TABS: { id: Tab; label: string; icon: typeof Activity }[] = [
   { id: "trade", label: "Operar", icon: ChartCandlestick },
-  { id: "robot", label: "Robô IA", icon: Bot },
   { id: "lab", label: "Estratégias", icon: BrainCircuit },
   { id: "history", label: "Histórico", icon: ScrollText },
   { id: "news", label: "Notícias", icon: Newspaper },
@@ -250,15 +255,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               onSelect={select}
               fresh={fresh}
               now={serverNow}
-              onRobot={() => setTab("robot")}
-            />
-          )}
-          {tab === "robot" && (
-            <RobotView
-              state={state}
               user={user}
-              selected={asset?.symbol ?? selected}
-              now={serverNow}
               onOpen={open}
             />
           )}
@@ -271,6 +268,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
           )}
         </main>
       </div>
+      <RobotAlerts robot={state?.robot} now={serverNow} onOpen={open} />
       <SignalDock
         signals={state?.signals || []}
         fresh={fresh}
@@ -348,7 +346,7 @@ function TickerTape({
     </div>
   );
 }
-type SideTab = "strat" | "list" | "map" | "news";
+type SideTab = "robot" | "strat" | "list" | "map" | "news";
 function SymbolPicker({
   state,
   selected,
@@ -442,9 +440,11 @@ function TradeView({
   onSelect,
   fresh,
   now,
-  onRobot,
+  user,
+  onOpen,
 }: {
-  onRobot: () => void;
+  user: User;
+  onOpen: (s: string) => void;
   state: State | null;
   lab: Lab | null;
   selected: string;
@@ -455,7 +455,7 @@ function TradeView({
   useTicks();
   const fullscreen = useChartFullscreen();
   const [focusId, setFocusId] = useState<string | null>(null),
-    [side, setSide] = useState<SideTab>("strat"),
+    [side, setSide] = useState<SideTab>("robot"),
     robotRead = useRobotRead(selected);
   // Trades pushed over the socket show up at once; the per-pair read refreshes every 15s.
   const liveOpenKey = JSON.stringify(
@@ -479,6 +479,13 @@ function TradeView({
     () => robotRead && { ...robotRead, trades: robotTrades },
     [robotRead, robotTrades],
   );
+  const robotUses = robotStudies(robotView),
+    robotLevels = robotView?.read
+      ? {
+          support: robotView.read.support,
+          resistance: robotView.read.resistance,
+        }
+      : undefined;
   const evals = useMemo(
     () =>
       (lab?.evaluations || [])
@@ -510,6 +517,7 @@ function TradeView({
       )
       .slice(0, 6);
   const SIDE: { id: SideTab; label: string; icon: typeof Activity }[] = [
+    { id: "robot", label: "Robô", icon: Bot },
     { id: "strat", label: "Estratégias", icon: BrainCircuit },
     { id: "list", label: "Ativos", icon: List },
     { id: "map", label: "Mapa 3D", icon: Box },
@@ -532,6 +540,8 @@ function TradeView({
           title={pair(asset.symbol).replace("/", "")}
           focus={focus}
           robotTrades={robotTrades}
+          robotStudies={robotUses}
+          robotLevels={robotLevels}
           signals={state.signals.filter((s) => s.symbol === asset.symbol)}
           head={
             <SymbolPicker
@@ -586,12 +596,6 @@ function TradeView({
           <section className="side-block">
             <h3>Sinal por expiração</h3>
             <Expiries state={state} asset={asset} fresh={fresh} now={now} />
-            <RobotMini
-              robot={state.robot}
-              symbol={asset.symbol}
-              now={now}
-              onOpen={onRobot}
-            />
           </section>
           <div className="tv-tabs" role="tablist">
             {SIDE.map((t) => (
@@ -606,6 +610,14 @@ function TradeView({
               </button>
             ))}
           </div>
+          {side === "robot" && (
+            <RobotSide
+              robot={state.robot}
+              user={user}
+              now={now}
+              onOpen={onOpen}
+            />
+          )}
           {side === "list" && (
             <Watchlist state={state} selected={selected} onSelect={onSelect} />
           )}

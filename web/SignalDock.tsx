@@ -12,7 +12,7 @@ import type { LabBrief, Signal } from "./types";
 import { CoinIcon } from "./Icons";
 import { SignalEvents, resultLabel, evidenceLabel } from "./signal-events";
 let audio: AudioContext | undefined;
-async function unlockAudio() {
+export async function unlockAudio() {
   try {
     audio ??= new AudioContext();
     await audio.resume();
@@ -20,7 +20,7 @@ async function unlockAudio() {
     /* unsupported */
   }
 }
-function beep(up: boolean) {
+export function beep(up: boolean) {
   if (!audio || audio.state !== "running") return;
   const o = audio.createOscillator(),
     g = audio.createGain();

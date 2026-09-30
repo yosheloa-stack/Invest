@@ -16,12 +16,13 @@ export class Store {
         if (version === 0 &&
             this.pool.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").rowCount)
             throw Error("Arquivo SQLite existente com schema desconhecido; preserve-o e use outro SQLITE_PATH");
-        if (version > 3)
+        if (version > 4)
             throw Error("Schema SQLite mais novo que esta aplicação");
         const migrations = [
             await readFile("migrations/001_initial.sql", "utf8"),
             await readFile("migrations/002_accounts.sql", "utf8"),
             await readFile("migrations/003_robot.sql", "utf8"),
+            await readFile("migrations/004_robot_settings.sql", "utf8"),
         ];
         this.pool.transaction(() => migrations.forEach((m) => this.pool.exec(m)));
         this.healthy = true;

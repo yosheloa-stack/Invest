@@ -274,9 +274,21 @@ app.post(
   auth.requireAdmin,
   (req, res) => {
     if (!robot) return void res.status(503).json({ error: "Robô iniciando" });
-    robot.enabled = Boolean(req.body?.enabled);
-    robot.status = robot.enabled ? "PROCURANDO OPORTUNIDADE" : "PAUSADO";
+    robot.setEnabled(Boolean(req.body?.enabled));
     res.json({ enabled: robot.enabled });
+  },
+);
+app.post(
+  "/api/robot/settings",
+  express.json({ limit: "1kb" }),
+  auth.requireAdmin,
+  (req, res) => {
+    if (!robot) return void res.status(503).json({ error: "Robô iniciando" });
+    const list = Array.isArray(req.body?.horizons)
+      ? req.body.horizons.map(Number)
+      : [];
+    robot.setHorizons(list);
+    res.json({ horizons: robot.horizons });
   },
 );
 // Live reading of one asset for the chart screen (rules only, no AI budget spent).
@@ -287,6 +299,7 @@ app.get("/api/robot/read/:symbol", (req, res) => {
   const read = robot.read(symbol, closedCandles(symbol));
   res.json({
     enabled: robot.enabled,
+    horizons: robot.horizons,
     ai: robot.ai.enabled,
     labReady: lab.evaluations.length > 0,
     labStatus: lab.status,

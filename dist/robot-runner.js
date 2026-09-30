@@ -1,5 +1,6 @@
 import { config } from "./config.js";
 import { log } from "./log.js";
+import { HORIZONS } from "./types.js";
 import { RobotAI } from "./robot-ai.js";
 import { liveKey, newTrade, readMarket, robotStats, settleTrade, } from "./robot.js";
 // Runs the simulated operator: one open trade per asset, settles at expiry from the live price.
@@ -8,6 +9,8 @@ export class Robot {
     lab;
     clock;
     enabled = config.ROBOT_ENABLED;
+    // Expiries the robot may use; chosen on the chart screen and kept across restarts.
+    horizons = [...HORIZONS];
     trades = [];
     reads = new Map();
     status = "AGUARDANDO HISTÓRICO DO LABORATÓRIO";
@@ -27,10 +30,37 @@ export class Robot {
             breakEven: this.breakEven,
             minTrades: config.ROBOT_MIN_TRADES,
             minScore: Math.max(config.ROBOT_MIN_WINRATE, this.breakEven),
+            horizons: this.horizons,
         };
     }
     // Trades left open by a restart are settled by settle() from the reloaded candles.
+    setHorizons(list) {
+        this.horizons = HORIZONS.filter((h) => list.includes(h));
+        if (!this.horizons.length)
+            this.horizons = [...HORIZONS];
+        this.db.query("INSERT INTO robot_settings(key,value) VALUES('horizons',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify(this.horizons)]);
+    }
+    setEnabled(on) {
+        this.enabled = on;
+        this.status = on ? "PROCURANDO OPORTUNIDADE" : "PAUSADO";
+        this.db.query("INSERT INTO robot_settings(key,value) VALUES('enabled',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify(on)]);
+    }
     load() {
+        for (const r of this.db.query("SELECT key,value FROM robot_settings")
+            .rows) {
+            try {
+                const v = JSON.parse(String(r.value));
+                if (r.key === "horizons" && Array.isArray(v))
+                    this.horizons = HORIZONS.filter((h) => v.includes(h));
+                if (r.key === "enabled" && typeof v === "boolean")
+                    this.enabled = v;
+            }
+            catch {
+                /* ignore a corrupt setting */
+            }
+        }
+        if (!this.horizons.length)
+            this.horizons = [...HORIZONS];
         this.trades = this.db
             .query("SELECT body FROM robot_trades ORDER BY opened_at DESC LIMIT 3000")
             .rows.map((r) => typeof r.body === "string" ? JSON.parse(r.body) : r.body);
@@ -160,6 +190,7 @@ export class Robot {
     brief() {
         return {
             enabled: this.enabled,
+            horizons: this.horizons,
             status: this.status,
             stats: robotStats(this.trades, config.ROBOT_BANKROLL),
             open: this.open,

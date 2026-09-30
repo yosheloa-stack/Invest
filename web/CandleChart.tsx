@@ -41,7 +41,7 @@ import {
 } from "./studies";
 import type { CandleData, Evaluation, RobotTrade, Signal } from "./types";
 import { PALETTE, useTheme, type Palette } from "./theme";
-const FRAMES = [1, 5, 15] as const;
+const FRAMES = [1, 5, 10, 15] as const;
 export type Frame = (typeof FRAMES)[number];
 const sec = (t: number) => Math.floor(t / 1000) as UTCTimestamp;
 const hhmm = (t: number) =>
@@ -49,7 +49,7 @@ const hhmm = (t: number) =>
     hour: "2-digit",
     minute: "2-digit",
   });
-// Groups 1-minute bars into 5 or 15-minute candles.
+// Groups 1-minute bars into 5, 10 or 15-minute candles.
 function aggregate(bars: Bar[], tf: number): Bar[] {
   if (tf === 1) return bars;
   const size = tf * 60000,
@@ -108,8 +108,13 @@ export default function CandleChart({
   expanded = false,
   onExpand,
   robotTrades = [],
+  robotStudies = [],
+  robotLevels,
 }: {
   robotTrades?: RobotTrade[];
+  // Indicators the robot is reading on this pair; forced on so the user sees them.
+  robotStudies?: Study[];
+  robotLevels?: { support: number | null; resistance: number | null };
   symbol: string;
   title: string;
   focus?: Evaluation;
@@ -167,6 +172,15 @@ export default function CandleChart({
         return n;
       });
   }, [focus?.id]);
+  const robotKey = robotStudies.join(",");
+  useEffect(() => {
+    if (robotKey)
+      setStudies((s) => {
+        const n = new Set(s);
+        robotKey.split(",").forEach((x) => n.add(x as Study));
+        return n.size === s.size ? s : n;
+      });
+  }, [robotKey]);
   useEffect(() => {
     try {
       localStorage.setItem("yosh-tf", String(tf));
@@ -747,6 +761,28 @@ export default function CandleChart({
       title: `Robô ${buy ? "compra" : "venda"} ${openTrade.horizon}m`,
     });
   }, [openTrade?.id, theme, data]);
+  // The support and resistance the robot is reading (1-minute swings).
+  const robotSr = useRef<IPriceLine[]>([]);
+  useEffect(() => {
+    const c = candles.current;
+    if (!c) return;
+    for (const l of robotSr.current) c.removePriceLine(l);
+    robotSr.current = [];
+    const add = (v: number | null | undefined, title: string, color: string) =>
+      v != null &&
+      robotSr.current.push(
+        c.createPriceLine({
+          price: v,
+          color,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+          title,
+        }),
+      );
+    add(robotLevels?.support, "Robô suporte", pal.current.up);
+    add(robotLevels?.resistance, "Robô resistência", pal.current.down);
+  }, [robotLevels?.support, robotLevels?.resistance, theme, data]);
   // Support/resistance of the visible timeframe as price lines, plus the market reading.
   useEffect(() => {
     const c = candles.current;
@@ -824,7 +860,7 @@ export default function CandleChart({
             aria-pressed={tf === f}
             onClick={() => setTf(f)}
           >
-            {f}m
+            M{f}
           </button>
         ))}
         <span className="tv-sep" />

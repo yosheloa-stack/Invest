@@ -1,13 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  ArrowBigDown,
+  ArrowBigUp,
   ArrowDownRight,
   ArrowUpRight,
   Bot,
+  Volume2,
+  VolumeX,
+  X,
   Pause,
   Play,
   Sparkles,
 } from "lucide-react";
 import { CoinIcon } from "./Icons";
+import { beep, unlockAudio } from "./SignalDock";
+import { STUDIES, studiesFor, type Study } from "./studies";
 import { liveBar, useTicks } from "./live";
 import {
   api,
@@ -24,9 +31,11 @@ import type {
   RobotBrief,
   RobotSummary,
   RobotTrade,
-  State,
   User,
 } from "./types";
+const STUDY_NAME = Object.fromEntries(
+  STUDIES.map((x) => [x.id, x.label]),
+) as Record<Study, string>;
 const money = (n: number | null | undefined, sign = false) =>
   n == null
     ? "—"
@@ -101,123 +110,41 @@ function OpenTrade({ t, now }: { t: RobotTrade; now: number }) {
     </div>
   );
 }
-function Analyze({
-  state,
-  selected,
-}: {
-  state: State | null;
-  selected: string;
-}) {
-  const [symbol, setSymbol] = useState(selected),
-    [busy, setBusy] = useState(false),
-    [out, setOut] = useState<{
-      read: MarketRead;
-      text: string | null;
-      source: "ia" | "regras";
-      model: string | null;
-      aiError: string | null;
-    } | null>(null),
-    [error, setError] = useState<string | null>(null);
-  useEffect(() => setSymbol(selected), [selected]);
-  const run = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      setOut(
-        await api("/api/robot/analyze", {
-          method: "POST",
-          body: JSON.stringify({ symbol }),
-        }),
-      );
-    } catch (e) {
-      setError((e as Error).message);
-      setOut(null);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const r = out?.read;
-  return (
-    <section className="panel rb-analyze">
-      <div className="panel-head">
-        <h2>Analisar agora</h2>
-        <span className="muted">Leitura do último candle fechado</span>
-      </div>
-      <div className="rb-ask">
-        <select
-          value={symbol}
-          onChange={(e) => setSymbol(e.target.value)}
-          aria-label="Ativo"
-        >
-          {(state?.assets || []).map((a) => (
-            <option key={a.symbol} value={a.symbol}>
-              {pair(a.symbol)}
-            </option>
-          ))}
-        </select>
-        <button className="primary" onClick={run} disabled={busy}>
-          <Sparkles size={15} />
-          {busy ? "Analisando…" : "Analisar"}
-        </button>
-      </div>
-      {error && <p className="notice bad-inline">{error}</p>}
-      {r && (
-        <div className="rb-result">
-          <div className="rb-verdict">
-            {r.pick ? (
-              <>
-                <Dir d={r.pick.direction} />
-                <b>Expiração {r.pick.horizon} min</b>
-                <span className="muted">força {pct(r.pick.score)}</span>
-              </>
-            ) : (
-              <b>Esperar</b>
-            )}
-            <span className={`rb-trend ${r.trend.toLowerCase()}`}>
-              Tendência {r.trend.toLowerCase()}
-            </span>
-          </div>
-          {out?.text ? (
-            <div className="rb-text">
-              <small>Análise da IA ({out.model})</small>
-              {out.text
-                .split("\n")
-                .filter(Boolean)
-                .map((l, i) => (
-                  <p key={i}>{l}</p>
-                ))}
-            </div>
-          ) : null}
-          <ul className="rb-lines">
-            {r.lines.map((l, i) => (
-              <li key={i}>{l}</li>
-            ))}
-          </ul>
-          {out?.aiError && (
-            <p className="muted">IA indisponível agora: {out.aiError}</p>
-          )}
-        </div>
-      )}
-    </section>
-  );
+const EXPIRIES = [5, 10, 15];
+const SOUND_KEY = "yosh-robot-sound";
+function soundOn() {
+  try {
+    return localStorage.getItem(SOUND_KEY) !== "0";
+  } catch {
+    return true;
+  }
 }
-export default function RobotView({
-  state,
+// Indicators behind the robot's current reading on a pair; the chart switches them on.
+export function robotStudies(data: RobotRead | null): Study[] {
+  if (!data?.read) return [];
+  const open = data.trades.find((t) => t.status === "ABERTA"),
+    id = open?.strategyId ?? data.read.pick?.id;
+  return [...new Set<Study>(["sr", "ema", ...studiesFor(id)])];
+}
+// The robot's controls and record, in the chart screen's right panel.
+export function RobotSide({
+  robot,
   user,
-  selected,
   now,
   onOpen,
 }: {
-  state: State | null;
+  robot: RobotBrief | null | undefined;
   user: User;
-  selected: string;
   now: number;
   onOpen: (s: string) => void;
 }) {
   const { data, error, reload } = useRobot(),
-    brief: RobotBrief | null | undefined = state?.robot ?? data,
+    brief: RobotBrief | null | undefined = robot ?? data,
     s = brief?.stats,
-    be = data?.breakEven ?? 0.5556;
+    be = data?.breakEven ?? 0.5556,
+    admin = user.role === "admin",
+    [sound, setSound] = useState(soundOn),
+    [saving, setSaving] = useState(false);
   const toggle = async () => {
     if (!brief) return;
     await api("/api/robot/toggle", {
@@ -226,273 +153,304 @@ export default function RobotView({
     }).catch(() => undefined);
     void reload();
   };
+  const horizons = brief?.horizons ?? EXPIRIES;
+  const setExpiry = async (h: number) => {
+    const next = horizons.includes(h)
+      ? horizons.filter((x) => x !== h)
+      : [...horizons, h].sort((a, b) => a - b);
+    if (!next.length) return;
+    setSaving(true);
+    await api("/api/robot/settings", {
+      method: "POST",
+      body: JSON.stringify({ horizons: next }),
+    }).catch(() => undefined);
+    await reload();
+    setSaving(false);
+  };
+  const flipSound = async () => {
+    const on = !sound;
+    setSound(on);
+    try {
+      localStorage.setItem(SOUND_KEY, on ? "1" : "0");
+    } catch {
+      /* private mode */
+    }
+    if (!on) return;
+    await unlockAudio();
+    beep(true);
+    if ("Notification" in window && Notification.permission === "default")
+      await Notification.requestPermission().catch(() => undefined);
+  };
+  const history = (data?.trades || [])
+    .filter((t) => t.status !== "ABERTA")
+    .slice(0, 30);
   return (
-    <>
-      <section className="rb-hero">
-        <div className={`rb-avatar ${brief?.enabled ? "on" : ""}`}>
-          <Bot size={30} strokeWidth={1.6} />
+    <div className="rb-side">
+      <div className="rb-side-head">
+        <div className={`rb-avatar small ${brief?.enabled ? "on" : ""}`}>
+          <Bot size={18} strokeWidth={1.7} />
         </div>
-        <div className="rb-hero-text">
-          <h1>Robô IA</h1>
-          <p>
+        <div>
+          <b>Robô IA</b>
+          <small className="muted">
             {brief
               ? sentence(brief.status)
               : error
                 ? error
                 : "Carregando o robô…"}
-          </p>
-          <div className="tags">
-            <span>Simulação · nenhuma ordem é enviada à corretora</span>
-            {data &&
-              (data.ai.enabled ? (
-                <span className="rb-ai on">
-                  Claude ligado · {data.ai.model} · {data.ai.usedLastHour}/
-                  {data.ai.maxPerHour} consultas na hora
-                </span>
-              ) : (
-                <span className="rb-ai">
-                  IA Claude desligada · o robô usa só as regras
-                </span>
-              ))}
-          </div>
-        </div>
-        {user.role === "admin" && brief && (
-          <button className="rb-toggle" onClick={toggle}>
-            {brief.enabled ? <Pause size={15} /> : <Play size={15} />}
-            {brief.enabled ? "Pausar robô" : "Ligar robô"}
-          </button>
-        )}
-      </section>
-      <section className="stats">
-        <div>
-          <span>Banca simulada</span>
-          <strong className={(s?.profit ?? 0) >= 0 ? "up" : "down"}>
-            {money(s?.balance)}
-          </strong>
-          <small>
-            começou com {money(s?.bankroll)} · {money(data?.stake)} por entrada
           </small>
         </div>
+        {admin && brief && (
+          <button className="rb-toggle" onClick={toggle}>
+            {brief.enabled ? <Pause size={14} /> : <Play size={14} />}
+            {brief.enabled ? "Pausar" : "Ligar"}
+          </button>
+        )}
+      </div>
+      <div className="tags">
+        <span>Simulação · não envia ordens</span>
+        {data &&
+          (data.ai.enabled ? (
+            <span className="rb-ai on">
+              Claude ligado · {data.ai.usedLastHour}/{data.ai.maxPerHour} na
+              hora
+            </span>
+          ) : (
+            <span className="rb-ai">Claude desligado · só regras</span>
+          ))}
+      </div>
+      <div className="rb-setting">
+        <span>Expirações que o robô usa</span>
+        <div className="rb-exp" role="group" aria-label="Expirações">
+          {EXPIRIES.map((h) => (
+            <button
+              key={h}
+              className={horizons.includes(h) ? "on" : ""}
+              aria-pressed={horizons.includes(h)}
+              disabled={!admin || saving}
+              onClick={() => setExpiry(h)}
+            >
+              M{h}
+            </button>
+          ))}
+        </div>
+        <small className="muted">
+          Vale para qualquer tempo de gráfico: você pode olhar o M1 e entrar com
+          expiração de 5 min.
+        </small>
+      </div>
+      <button className={`rb-sound ${sound ? "on" : ""}`} onClick={flipSound}>
+        {sound ? <Volume2 size={15} /> : <VolumeX size={15} />}
+        {sound ? "Som de compra e venda ligado" : "Som desligado"}
+      </button>
+      <div className="rb-mini-stats">
         <div>
-          <span>Acerto do robô</span>
-          <strong
+          <span>Banca</span>
+          <b className={(s?.profit ?? 0) >= 0 ? "up" : "down"}>
+            {money(s?.balance)}
+          </b>
+        </div>
+        <div>
+          <span>Acerto</span>
+          <b
             className={s?.winRate == null ? "" : s.winRate > be ? "up" : "down"}
           >
             {pct(s?.winRate)}
-          </strong>
-          <small>precisa passar de {pct(be)}</small>
+          </b>
         </div>
         <div>
-          <span>Operações</span>
-          <strong>{s ? `${s.wins} / ${s.losses}` : "—"}</strong>
-          <small>ganhos / perdas · {s?.ties ?? 0} empates</small>
+          <span>Ganhos / perdas</span>
+          <b>{s ? `${s.wins} / ${s.losses}` : "—"}</b>
         </div>
         <div>
           <span>Hoje</span>
-          <strong className={(s?.todayProfit ?? 0) >= 0 ? "up" : "down"}>
+          <b className={(s?.todayProfit ?? 0) >= 0 ? "up" : "down"}>
             {money(s?.todayProfit, true)}
-          </strong>
-          <small>
-            {s?.todayTrades ?? 0} operações ·{" "}
-            {s?.streak
-              ? Math.abs(s.streak) === 1
-                ? `última: ${s.streak > 0 ? "vitória" : "derrota"}`
-                : `${Math.abs(s.streak)} ${s.streak > 0 ? "vitórias" : "derrotas"} seguidas`
-              : "sem sequência"}
-          </small>
+          </b>
         </div>
-      </section>
-      <div className="rb-grid">
-        <section className="panel">
-          <div className="panel-head">
-            <h2>Operações abertas</h2>
-            <span className="muted">
-              até {data?.maxOpen ?? 3} ao mesmo tempo, uma por ativo
-            </span>
-          </div>
-          {brief?.open.length ? (
-            <div className="rb-opens">
-              {brief.open.map((t) => (
-                <OpenTrade key={t.id} t={t} now={now} />
-              ))}
-            </div>
-          ) : (
-            <p className="muted">
-              Nenhuma operação aberta. O robô entra sozinho quando um gatilho
-              com histórico acima de {pct(data?.minScore ?? be)} dispara e o
-              contexto do gráfico concorda.
-            </p>
-          )}
-        </section>
-        <Analyze state={state} selected={selected} />
       </div>
-      <section className="panel">
-        <div className="panel-head">
-          <h2>O que o robô está vendo</h2>
-          <span className="muted">Atualiza a cada candle de 1 minuto</span>
-        </div>
-        <div className="rb-reads">
-          {(data?.reads || []).map((r) => (
-            <button key={r.symbol} onClick={() => onOpen(r.symbol)}>
-              <CoinIcon symbol={r.symbol} size={18} />
-              <b>{ticker(r.symbol)}</b>
-              <span className={`rb-trend ${r.trend.toLowerCase()}`}>
-                {r.trend.toLowerCase()}
-              </span>
-              <span className="rb-read-why">{r.why}</span>
-            </button>
-          ))}
-          {!data?.reads.length && (
-            <p className="muted">
-              Aguardando o próximo candle e o laboratório de estratégias.
-            </p>
-          )}
-        </div>
-      </section>
-      <section className="panel">
-        <div className="panel-head">
-          <h2>Histórico do robô</h2>
-          <span className="muted">
-            Resultado pelo preço ao vivo no vencimento; payout{" "}
-            {pct(data?.payout, 0)}
-          </span>
-        </div>
-        <div className="table-scroll rb-table">
-          <table>
-            <thead>
-              <tr>
-                <th>Hora</th>
-                <th>Ativo</th>
-                <th>Direção</th>
-                <th>Exp.</th>
-                <th>Entrada → saída</th>
-                <th>Resultado</th>
-                <th>Por quê</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(data?.trades || [])
-                .filter((t) => t.status !== "ABERTA")
-                .slice(0, 100)
-                .map((t) => (
-                  <tr key={t.id}>
-                    <td>{clock(t.openedAt)}</td>
-                    <td>{ticker(t.symbol)}</td>
-                    <td>
-                      <Dir d={t.direction} />
-                    </td>
-                    <td>{t.horizon} min</td>
-                    <td>
-                      {price(t.entry)} → {price(t.exit)}
-                    </td>
-                    <td>
-                      {t.status === "CANCELADA" ? (
-                        <span className="muted">Cancelada</span>
-                      ) : (
-                        <b
-                          className={
-                            t.result === "WIN"
-                              ? "up"
-                              : t.result === "LOSS"
-                                ? "down"
-                                : "muted"
-                          }
-                        >
-                          {t.result === "WIN"
-                            ? "Ganhou"
-                            : t.result === "LOSS"
-                              ? "Perdeu"
-                              : "Empate"}{" "}
-                          {money(t.profit, true)}
-                        </b>
-                      )}
-                    </td>
-                    <td className="rb-why-cell">
-                      {t.note ?? t.strategy}
-                      {t.ai ? ` · IA ${t.ai.confidence}%` : ""}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-        <ul className="rb-list">
-          {(data?.trades || [])
-            .filter((t) => t.status !== "ABERTA")
-            .slice(0, 50)
-            .map((t) => (
-              <li key={t.id}>
-                <CoinIcon symbol={t.symbol} size={20} />
-                <div>
-                  <p>
-                    <b>{ticker(t.symbol)}</b> <Dir d={t.direction} />{" "}
-                    <span className="muted">{t.horizon} min</span>
-                  </p>
-                  <small className="muted">
-                    {clock(t.openedAt)} · {price(t.entry)} → {price(t.exit)}
-                  </small>
-                  <small className="muted">
-                    {t.note ?? t.strategy}
-                    {t.ai ? ` · IA ${t.ai.confidence}%` : ""}
-                  </small>
-                </div>
-                {t.status === "CANCELADA" ? (
-                  <span className="muted">Cancelada</span>
-                ) : (
-                  <b
-                    className={
-                      t.result === "WIN"
-                        ? "up"
-                        : t.result === "LOSS"
-                          ? "down"
-                          : "muted"
-                    }
-                  >
-                    {money(t.profit, true)}
-                  </b>
-                )}
-              </li>
-            ))}
-        </ul>
-        {!data?.trades.some((t) => t.status !== "ABERTA") && (
-          <p className="muted pad">
-            As operações aparecem aqui quando vencerem.
-          </p>
-        )}
-      </section>
-    </>
+      <p className="muted rb-note">
+        Precisa acertar mais de {pct(be)} para dar lucro com payout{" "}
+        {pct(data?.payout ?? 0.8, 0)}.
+      </p>
+      <h3 className="rb-side-title">Operações abertas</h3>
+      {brief?.open.length ? (
+        brief.open.map((t) => (
+          <button
+            key={t.id}
+            className="rb-open-btn"
+            onClick={() => onOpen(t.symbol)}
+          >
+            <OpenTrade t={t} now={now} />
+          </button>
+        ))
+      ) : (
+        <p className="muted">
+          Nenhuma aberta. O robô entra sozinho quando um gatilho com bom
+          histórico dispara.
+        </p>
+      )}
+      <h3 className="rb-side-title">Histórico</h3>
+      <ul className="rb-list">
+        {history.map((t) => (
+          <li key={t.id} onClick={() => onOpen(t.symbol)}>
+            <CoinIcon symbol={t.symbol} size={20} />
+            <div>
+              <p>
+                <b>{ticker(t.symbol)}</b> <Dir d={t.direction} />{" "}
+                <span className="muted">M{t.horizon}</span>
+              </p>
+              <small className="muted">
+                {clock(t.openedAt)} · {price(t.entry)} → {price(t.exit)}
+              </small>
+              <small className="muted">{t.note ?? t.strategy}</small>
+            </div>
+            {t.status === "CANCELADA" ? (
+              <span className="muted">Cancelada</span>
+            ) : (
+              <b
+                className={
+                  t.result === "WIN"
+                    ? "up"
+                    : t.result === "LOSS"
+                      ? "down"
+                      : "muted"
+                }
+              >
+                {money(t.profit, true)}
+              </b>
+            )}
+          </li>
+        ))}
+      </ul>
+      {!history.length && (
+        <p className="muted">As operações aparecem aqui quando vencerem.</p>
+      )}
+    </div>
   );
 }
-// Compact card for the trading screen's right panel.
-export function RobotMini({
+type Alert = { t: RobotTrade; kind: "entry" | "result"; at: number };
+// Big buy/sell warning with sound whenever the robot enters, on any screen.
+export function RobotAlerts({
   robot,
-  symbol,
   now,
   onOpen,
 }: {
   robot: RobotBrief | null | undefined;
-  symbol: string;
   now: number;
-  onOpen: () => void;
+  onOpen: (s: string) => void;
 }) {
-  if (!robot) return null;
-  const t = robot.open.find((x) => x.symbol === symbol),
-    s = robot.stats;
+  const seen = useRef<Set<string> | null>(null),
+    [alerts, setAlerts] = useState<Alert[]>([]);
+  useEffect(() => {
+    // Browsers only allow sound after a tap; unlock it on the first one.
+    const on = () => void (soundOn() && unlockAudio());
+    window.addEventListener("pointerdown", on, { once: true });
+    return () => window.removeEventListener("pointerdown", on);
+  }, []);
+  useEffect(() => {
+    if (!robot) return;
+    const keys = [
+      ...robot.open.map((t) => ({ t, k: `o${t.id}`, kind: "entry" as const })),
+      ...robot.last
+        .filter((t) => t.status === "FECHADA")
+        .map((t) => ({ t, k: `c${t.id}`, kind: "result" as const })),
+    ];
+    // Nothing that already existed when the page opened is announced.
+    if (!seen.current) {
+      seen.current = new Set(keys.map((x) => x.k));
+      return;
+    }
+    const fresh = keys.filter((x) => !seen.current!.has(x.k));
+    if (!fresh.length) return;
+    fresh.forEach((x) => seen.current!.add(x.k));
+    const at = Date.now();
+    setAlerts((a) =>
+      [...fresh.map((x) => ({ t: x.t, kind: x.kind, at })), ...a].slice(0, 3),
+    );
+    for (const x of fresh) {
+      if (x.kind !== "entry") continue;
+      const up = x.t.direction === "COMPRA";
+      if (soundOn()) {
+        beep(up);
+        setTimeout(() => beep(up), 220);
+      }
+      if ("Notification" in window && Notification.permission === "granted")
+        try {
+          new Notification(
+            `Robô: ${up ? "COMPRA" : "VENDA"} ${ticker(x.t.symbol)} · M${x.t.horizon}`,
+            {
+              body: `Entrada em ${price(x.t.entry)}, expiração de ${x.t.horizon} min.`,
+              tag: x.t.id,
+            },
+          );
+        } catch {
+          /* mobile browsers without Notification constructor */
+        }
+    }
+  }, [robot]);
+  // The warning stays 30 seconds (the trade itself stays on the chart); results 12 seconds.
+  const shown = alerts.filter((a) =>
+    a.kind === "entry"
+      ? now < a.t.due && Date.now() - a.at < 30000
+      : Date.now() - a.at < 12000,
+  );
+  if (!shown.length) return null;
   return (
-    <button className="rb-mini" onClick={onOpen}>
-      <Bot size={16} />
-      {t ? (
-        <span>
-          Robô em <b>{dirText(t.direction).toLowerCase()}</b> · {t.horizon} min
-          · {countdown(t.due - now)}
-        </span>
-      ) : (
-        <span>
-          {robot.enabled ? "Robô procurando entrada" : "Robô pausado"}
-          {s.trades ? ` · acerto ${pct(s.winRate)} em ${s.trades}` : ""}
-        </span>
-      )}
-    </button>
+    <div className="rb-alerts" role="alert">
+      {shown.map((a) => {
+        const up = a.t.direction === "COMPRA",
+          close = () => setAlerts((x) => x.filter((y) => y !== a));
+        if (a.kind === "result")
+          return (
+            <div
+              key={`r${a.t.id}`}
+              className={`rb-alert result ${a.t.result === "WIN" ? "win" : "lose"}`}
+            >
+              <CoinIcon symbol={a.t.symbol} size={22} />
+              <b>
+                {a.t.result === "WIN"
+                  ? "Robô ganhou"
+                  : a.t.result === "LOSS"
+                    ? "Robô perdeu"
+                    : "Empate"}{" "}
+                {ticker(a.t.symbol)} · M{a.t.horizon}
+              </b>
+              <span>{money(a.t.profit, true)}</span>
+              <button className="icon" aria-label="Fechar" onClick={close}>
+                <X size={16} />
+              </button>
+            </div>
+          );
+        return (
+          <div key={`e${a.t.id}`} className={`rb-alert ${up ? "buy" : "sell"}`}>
+            <button
+              className="rb-alert-main"
+              onClick={() => onOpen(a.t.symbol)}
+            >
+              {up ? (
+                <ArrowBigUp size={34} fill="currentColor" />
+              ) : (
+                <ArrowBigDown size={34} fill="currentColor" />
+              )}
+              <span>
+                <strong>
+                  {up ? "COMPRA" : "VENDA"} {ticker(a.t.symbol)} · M
+                  {a.t.horizon}
+                </strong>
+                <small>
+                  Robô entrou em {price(a.t.entry)} · {a.t.strategy}
+                </small>
+              </span>
+              <em className="rb-count">{countdown(a.t.due - now)}</em>
+            </button>
+            <button className="icon" aria-label="Fechar" onClick={close}>
+              <X size={16} />
+            </button>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 export type RobotRead = {
@@ -500,6 +458,7 @@ export type RobotRead = {
   ai: boolean;
   labReady: boolean;
   labStatus: string;
+  horizons: number[];
   read: MarketRead | null;
   trades: RobotTrade[];
 };
@@ -568,6 +527,18 @@ export function RobotLive({
         ? (c - open.entry) * (open.direction === "COMPRA" ? 1 : -1)
         : 0;
   const lines = r?.lines.slice(0, -1) ?? [];
+  const studies = robotStudies(data),
+    uses = [
+      ...studies.map((x) => STUDY_NAME[x]),
+      ...(r?.rsi != null && !studies.includes("rsi")
+        ? [`RSI 14 em ${r.rsi.toFixed(0)}`]
+        : []),
+      ...(open
+        ? [`Gatilho ${open.strategy}`]
+        : r?.pick
+          ? [`Gatilho ${r.pick.label}`]
+          : []),
+    ];
   return (
     <section className="rb-live" aria-live="polite">
       <header>
@@ -624,6 +595,12 @@ export function RobotLive({
                 ? r.why
                 : `Lendo o gráfico; entradas liberadas quando o backtest terminar (${sentence(data?.labStatus)}).`}
           </p>
+          <div className="rb-uses">
+            <span className="muted">O robô está usando:</span>
+            {uses.map((u) => (
+              <span key={u}>{u}</span>
+            ))}
+          </div>
           <ul className="rb-lines">
             {(more ? lines : lines.slice(0, 3)).map((l, i) => (
               <li key={i}>{l}</li>

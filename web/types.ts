@@ -152,6 +152,7 @@ export type State = {
 };
 export type RobotTrade = {
   id: string;
+  strategyId: string;
   symbol: string;
   horizon: number;
   direction: "COMPRA" | "VENDA";
@@ -193,6 +194,7 @@ export type RobotStats = {
 };
 export type RobotBrief = {
   enabled: boolean;
+  horizons: number[];
   status: string;
   stats: RobotStats;
   open: RobotTrade[];
@@ -210,6 +212,7 @@ export type MarketRead = {
   why: string;
   lines: string[];
   pick: {
+    id: string;
     label: string;
     direction: "COMPRA" | "VENDA";
     horizon: number;
