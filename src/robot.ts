@@ -64,6 +64,7 @@ export interface RobotOptions {
   minTrades: number;
   minScore: number;
   horizons?: readonly number[];
+  minAgree?: number;
 }
 const specs = new Map(catalog().map((x) => [x.id, x]));
 export const liveKey = (id: string, symbol: string, h: number) =>
@@ -165,6 +166,20 @@ export function readMarket(
       f.score >= o.minScore &&
       (!o.horizons || o.horizons.includes(f.horizon)),
   );
+  // Confirmation: other strategy families that fired the same way and are not losers in history.
+  const agree = (f: Fired) =>
+    new Set(
+      fired
+        .filter(
+          (g) =>
+            g.direction === f.direction &&
+            !g.against &&
+            !g.paused &&
+            g.score >= 0.5,
+        )
+        .map((g) => g.id.split(":")[0]),
+    ).size;
+  const minAgree = o.minAgree ?? 1;
   let pick: Fired | null = null,
     why: string;
   if (!fired.length) why = "Nenhum gatilho disparou neste candle.";
@@ -175,9 +190,11 @@ export function readMarket(
     why = `Gatilho disparou, mas nenhum tem histórico acima do mínimo escolhido (${pctTxt(o.minScore)}).`;
   else if (eligible.some((f) => f.direction !== eligible[0].direction))
     why = "Gatilhos bons em direções opostas; o robô fica de fora.";
+  else if (agree(eligible[0]) < minAgree)
+    why = `Só ${agree(eligible[0])} estratégia confirma; o robô espera ${minAgree} concordando.`;
   else {
     pick = eligible[0];
-    why = `Entrada em ${pick.direction === "COMPRA" ? "compra" : "venda"} com expiração de ${pick.horizon} min.`;
+    why = `Entrada em ${pick.direction === "COMPRA" ? "compra" : "venda"} com expiração de ${pick.horizon} min (${agree(pick)} estratégias concordam).`;
   }
   const lines = [
     trend === "LATERAL"
@@ -260,15 +277,49 @@ export function settleTrade(
       result === "WIN" ? t.stake * t.payout : result === "LOSS" ? -t.stake : 0,
   };
 }
+const spDay = (t: number) =>
+  new Date(t).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+export const spHour = (t: number) =>
+  new Date(t).toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    hour12: false,
+  }) + "h";
+// Where the robot's own record is below break-even (asset or São Paulo hour), it stops entering.
+export function losingSpot(
+  trades: RobotTrade[],
+  symbol: string,
+  now: number,
+  breakEven: number,
+  minTrades: number,
+): string | null {
+  const hour = spHour(now),
+    check = (ts: RobotTrade[], what: string) => {
+      const w = ts.filter((t) => t.result === "WIN").length,
+        l = ts.filter((t) => t.result === "LOSS").length;
+      return w + l >= minTrades && w / (w + l) < breakEven
+        ? `O robô está perdendo ${what} (${w} de ${w + l}, ${pctTxt(w / (w + l))}); fica de fora.`
+        : null;
+    },
+    done = trades.filter((t) => t.status === "FECHADA");
+  return (
+    check(
+      done.filter((t) => t.symbol === symbol),
+      "neste ativo",
+    ) ??
+    check(
+      done.filter((t) => spHour(t.openedAt) === hour),
+      `neste horário (${hour})`,
+    )
+  );
+}
 export function robotStats(trades: RobotTrade[], bankroll: number) {
   const done = trades.filter((t) => t.status === "FECHADA"),
     wins = done.filter((t) => t.result === "WIN").length,
     losses = done.filter((t) => t.result === "LOSS").length,
     profit = done.reduce((a, t) => a + (t.profit ?? 0), 0),
-    day = new Date().toISOString().slice(0, 10),
-    today = done.filter(
-      (t) => new Date(t.openedAt).toISOString().slice(0, 10) === day,
-    );
+    day = spDay(Date.now()),
+    today = done.filter((t) => spDay(t.openedAt) === day);
   const byHorizon = STRATEGY_HORIZONS.map((h) => {
     const r = done.filter((t) => t.horizon === h),
       w = r.filter((t) => t.result === "WIN").length,
@@ -328,5 +379,49 @@ export function newTrade(
     status: "ABERTA",
     reading: read.lines,
     ai,
+  };
+}
+// The Desempenho screen: the robot's closed trades, overall and grouped.
+export function robotPerformance(trades: RobotTrade[], breakEven: number) {
+  const done = trades
+    .filter((t) => t.status === "FECHADA")
+    .sort((a, b) => a.closedAt! - b.closedAt!);
+  const summarize = (ts: RobotTrade[]) => {
+    const wins = ts.filter((t) => t.result === "WIN").length,
+      losses = ts.filter((t) => t.result === "LOSS").length;
+    let streak = 0,
+      max = 0;
+    for (const t of ts) {
+      if (t.result === "EMPATE") continue;
+      streak = t.result === "LOSS" ? streak + 1 : 0;
+      max = Math.max(max, streak);
+    }
+    return {
+      count: ts.length,
+      wins,
+      losses,
+      neutrals: ts.length - wins - losses,
+      winRate: wins + losses ? wins / (wins + losses) : null,
+      maxLossStreak: max,
+      profit: ts.reduce((a, t) => a + (t.profit ?? 0), 0),
+    };
+  };
+  const grouped = (fn: (t: RobotTrade) => string) => {
+    const groups: Record<string, RobotTrade[]> = {};
+    for (const t of done) (groups[fn(t)] ??= []).push(t);
+    return Object.fromEntries(
+      Object.entries(groups)
+        .sort((a, b) => b[1].length - a[1].length)
+        .map(([k, v]) => [k, summarize(v)]),
+    );
+  };
+  return {
+    ...summarize(done),
+    open: trades.filter((t) => t.status === "ABERTA").length,
+    breakEven,
+    byAsset: grouped((t) => t.symbol),
+    byHorizon: grouped((t) => `${t.horizon} min`),
+    byHour: grouped((t) => spHour(t.openedAt)),
+    byStrategy: grouped((t) => t.strategy),
   };
 }

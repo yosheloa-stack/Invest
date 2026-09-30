@@ -11,12 +11,14 @@ import {
 import { RobotAI } from "./robot-ai.js";
 import {
   liveKey,
+  losingSpot,
   newTrade,
   readMarket,
   robotStats,
   settleTrade,
   type MarketRead,
   type RobotTrade,
+  robotPerformance,
 } from "./robot.js";
 export const ROBOT_LEVELS = ["alta", "media", "baixa"] as const;
 export type RobotLevel = (typeof ROBOT_LEVELS)[number];
@@ -53,6 +55,7 @@ export class Robot {
       minTrades: config.ROBOT_MIN_TRADES,
       minScore: config.ROBOT_MIN_WINRATE || this.levelScore(),
       horizons: this.horizons,
+      minAgree: config.ROBOT_MIN_AGREE,
     };
   }
   levelScore() {
@@ -107,9 +110,13 @@ export class Robot {
     if (!this.horizons.length) this.horizons = [...ROBOT_DEFAULT_HORIZONS];
     this.trades = this.db
       .query("SELECT body FROM robot_trades ORDER BY opened_at DESC LIMIT 3000")
-      .rows.map((r) =>
-        typeof r.body === "string" ? JSON.parse(r.body) : r.body,
-      );
+      .rows.flatMap((r) => {
+        try {
+          return [typeof r.body === "string" ? JSON.parse(r.body) : r.body];
+        } catch {
+          return []; // skip a corrupt row instead of failing startup
+        }
+      });
   }
   private save(t: RobotTrade) {
     this.db.query(
@@ -157,12 +164,13 @@ export class Robot {
         continue;
       }
       if (now < t.due + 90000) continue;
-      // Live price missed the expiry (restart or feed gap): use the 1m candle that contains it.
+      // Live price missed the expiry (restart or feed gap): the open of the 1m candle that
+      // contains it is the last known price at or before expiry.
       const c = candleAt(t.symbol, t.due);
       this.save(
         c
           ? {
-              ...settleTrade(t, c.c, c.end),
+              ...settleTrade(t, c.o, t.due),
               note: "Saída pelo fechamento do candle do vencimento",
             }
           : {
@@ -203,9 +211,25 @@ export class Robot {
       !pick ||
       this.busy.has(symbol) ||
       this.open.some((t) => t.symbol === symbol) ||
-      this.open.length >= config.ROBOT_MAX_OPEN
+      this.open.length + this.busy.size >= config.ROBOT_MAX_OPEN
     )
       return;
+    const losing = losingSpot(
+      this.trades,
+      symbol,
+      now,
+      this.breakEven,
+      config.ROBOT_CUT_MIN_TRADES,
+    );
+    if (losing) {
+      this.reads.set(symbol, {
+        ...read,
+        pick: null,
+        why: losing,
+        lines: [...read.lines.slice(0, -1), losing],
+      });
+      return;
+    }
     const lastOnSymbol = this.trades.find((t) => t.symbol === symbol);
     if (
       lastOnSymbol &&
@@ -228,7 +252,11 @@ export class Robot {
           at = this.clock();
         // The opportunity is only valid right after the candle closed.
         if (!q || at - last.end > 45000 || at - q.t > staleMs(symbol)) return;
-        if (this.open.some((t) => t.symbol === symbol)) return;
+        if (
+          this.open.some((t) => t.symbol === symbol) ||
+          this.open.length >= config.ROBOT_MAX_OPEN
+        )
+          return;
         this.save(
           newTrade(
             read,
@@ -264,6 +292,9 @@ export class Robot {
       open: this.open,
       last: this.trades.filter((t) => t.status !== "ABERTA").slice(0, 5),
     };
+  }
+  performance() {
+    return robotPerformance(this.trades, this.breakEven);
   }
   summary() {
     return {
