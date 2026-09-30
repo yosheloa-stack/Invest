@@ -5,6 +5,7 @@ import { config, isFx, staleMs, symbols, fxPollMs } from "./config.js";
 import { combine, fillGaps, yahooChart } from "./fx.js";
 import { INTERVALS } from "./types.js";
 import { log } from "./log.js";
+const HOT_FX_MS = 2000;
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 export class RestClient {
     offset = 0;
@@ -64,8 +65,26 @@ export class RestClient {
         return Math.floor(Date.now() + this.offset);
     }
 }
+// Point-in-time copy for one analysis pass. Candle and trade records are never edited after
+// they arrive (new ones replace them), so copying the arrays and the small live objects is
+// enough; a deep clone of 57 assets every second blocked the server for ~0.5-1 s.
 export function freezeMarketState(s) {
-    return structuredClone(s);
+    const c = s.candles;
+    return {
+        ...s,
+        trade: s.trade && { ...s.trade },
+        forming: s.forming && { ...s.forming },
+        quote: s.quote && { ...s.quote },
+        book: s.book && { ...s.book },
+        trades: s.trades.slice(),
+        candles: {
+            "1m": c["1m"].slice(),
+            "5m": c["5m"].slice(),
+            "15m": c["15m"].slice(),
+            "1h": c["1h"].slice(),
+        },
+        lastKline: { ...s.lastKline },
+    };
 }
 export function putCandle(a, c) {
     return [...a.filter((x) => x.t !== c.t), c]
@@ -117,6 +136,8 @@ export class MarketData extends EventEmitter {
     timers = new Set();
     stopped = false;
     syncTimer;
+    // Symbols on someone's screen or with an open robot trade.
+    hot = new Set();
     constructor() {
         super();
         for (const symbol of symbols)
@@ -304,7 +325,10 @@ export class MarketData extends EventEmitter {
             const trade = { id, t, p, q, buy: !d.m, received: now };
             s.trade = trade;
             s.trades.push(trade);
-            s.trades = s.trades.filter((x) => x.t >= now - 180000);
+            // Trades arrive in time order; cut the old front in batches (a full filter on every
+            // trade was O(n) per message on busy pairs). Readers filter by time themselves.
+            if (s.trades[0].t < now - 200000)
+                s.trades = s.trades.filter((x) => x.t >= now - 180000);
         }
         else if (msg.stream.endsWith("@bookTicker")) {
             const bid = Number(d.b), ask = Number(d.a);
@@ -415,7 +439,9 @@ export class MarketData extends EventEmitter {
                 s.error = "ERRO NA FONTE FOREX";
                 log.warn({ err: e, symbol: s.symbol }, "forex");
             }
-            this.pollFx(s, fxPollMs);
+            // With ~34 Yahoo assets each one is read every ~17 s; the pair someone is looking at
+            // (or trading) is read every 2 s so its chart keeps up with the market.
+            this.pollFx(s, this.hot.has(s.symbol) ? HOT_FX_MS : fxPollMs);
         }, wait);
         this.timers.add(timer);
     }

@@ -8,7 +8,7 @@ import {
   X,
 } from "lucide-react";
 import { clock, countdown, pair, pct, price } from "./format";
-import type { LabBrief, Signal } from "./types";
+import type { LabBrief, RobotBrief, Signal } from "./types";
 import { CoinIcon } from "./Icons";
 import { entryPhrase, speak } from "./voice";
 import { SignalEvents, resultLabel, evidenceLabel } from "./signal-events";
@@ -21,8 +21,17 @@ export async function unlockAudio() {
     /* unsupported */
   }
 }
-export function beep(up: boolean) {
-  if (!audio || audio.state !== "running") return;
+export function beep(up: boolean, retry = true) {
+  if (!audio) return;
+  // A phone suspends audio when the screen locks or the tab goes to the background.
+  if (audio.state !== "running") {
+    if (retry)
+      void audio.resume().then(
+        () => beep(up, false),
+        () => undefined,
+      );
+    return;
+  }
   const o = audio.createOscillator(),
     g = audio.createGain();
   o.frequency.value = up ? 880 : 520;
@@ -44,6 +53,7 @@ export default function SignalDock({
   now,
   prices,
   lab,
+  robot,
   onOpen,
 }: {
   signals: Signal[];
@@ -51,6 +61,7 @@ export default function SignalDock({
   now: number;
   prices: Record<string, number | null>;
   lab?: LabBrief;
+  robot?: RobotBrief | null;
   onOpen: (symbol: string) => void;
 }) {
   // Alerts stay on across visits; the first tap on the page unlocks the sound (voice.ts).
@@ -149,6 +160,42 @@ export default function SignalDock({
       <span>{alerts ? "Avisos ligados" : "Ligar avisos"}</span>
     </button>
   );
+  // The robot's trades are the entries that actually happen; the bar shows the newest one
+  // (it used to say "Nenhuma estratégia aprovada" while the robot was operating).
+  const trade = fresh
+    ? robot?.open
+        .filter((t) => t.due > now)
+        .sort((a, b) => b.openedAt - a.openedAt)[0]
+    : undefined;
+  if (!current && trade) {
+    const up = trade.direction === "COMPRA",
+      Arrow = up ? ArrowUpRight : ArrowDownRight,
+      c = prices[trade.symbol] ?? null,
+      move = c == null ? 0 : (c - trade.entry) * (up ? 1 : -1),
+      more = (robot?.open.length ?? 1) - 1;
+    return (
+      <div className={`dock running ${up ? "buy" : "sell"}`} role="status">
+        <button className="dock-main" onClick={() => onOpen(trade.symbol)}>
+          <Arrow size={28} />
+          <div>
+            <strong>
+              <CoinIcon symbol={trade.symbol} size={18} /> Robô:{" "}
+              {up ? "Compra" : "Venda"} {pair(trade.symbol)} · expiração{" "}
+              {trade.horizon} min
+            </strong>
+            <p>
+              Entrada {price(trade.entry)} às {clock(trade.openedAt)} · agora{" "}
+              {price(c)} ·{" "}
+              {move > 0 ? "ganhando" : move < 0 ? "perdendo" : "empatado"}
+              {more > 0 ? ` · +${more} aberta${more > 1 ? "s" : ""}` : ""}
+            </p>
+          </div>
+          <span className="dock-timer">{countdown(trade.due - now)}</span>
+        </button>
+        {bell}
+      </div>
+    );
+  }
   if (!fresh || !current)
     return (
       <div className="dock idle" role="status">
@@ -163,9 +210,11 @@ export default function SignalDock({
             <p>
               {!fresh
                 ? "Aguarde a reconexão. Os resultados ficam no histórico."
-                : lab?.approved
-                  ? `${lab.approved} estratégia(s) aprovada(s) vigiando o mercado`
-                  : "Nenhuma estratégia aprovada agora · sem entrada é melhor que entrada ruim"}
+                : robot?.enabled
+                  ? `Robô ${robot.status.toLowerCase()} · avisa com som e voz quando entrar`
+                  : lab?.approved
+                    ? `${lab.approved} estratégia(s) aprovada(s) vigiando o mercado`
+                    : "Robô pausado · ligue na aba Robô para receber entradas"}
             </p>
           </div>
         </div>

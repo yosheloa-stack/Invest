@@ -1,13 +1,21 @@
 export const pct = (n: number | null | undefined, digits = 1) =>
   n == null ? "—" : `${(n * 100).toFixed(digits).replace(".", ",")}%`;
+// toLocaleString with options builds a new formatter on every call; the chart's price axis
+// and the price lists call this hundreds of times per second, so the formatters are reused.
+const priceFormats = new Map<number, Intl.NumberFormat>();
 export const price = (n: number | null | undefined) => {
   if (n == null) return "—";
   const digits =
     n >= 1000 ? 2 : n >= 10 ? 3 : n >= 0.01 ? 5 : n >= 0.0001 ? 7 : 9;
-  return n.toLocaleString("pt-BR", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
+  let f = priceFormats.get(digits);
+  if (!f) {
+    f = new Intl.NumberFormat("pt-BR", {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
+    priceFormats.set(digits, f);
+  }
+  return f.format(n);
 };
 export const clock = (t: number) =>
   new Date(t).toLocaleTimeString("pt-BR", {

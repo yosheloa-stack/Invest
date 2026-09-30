@@ -37,10 +37,6 @@ export type Asset = {
   feed: string;
   reasons: string[];
   eventTime: number | null;
-  chart: { t: number; p: number }[];
-  indicators: Record<string, number> | null;
-  features: Record<string, number | string | boolean> | null;
-  groups: Record<string, number> | null;
   forecasts: Forecast[];
 };
 export type Metric = {

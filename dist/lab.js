@@ -1,4 +1,6 @@
 import { Worker } from "node:worker_threads";
+import { readFileSync, writeFileSync, renameSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { config, isFx, symbols } from "./config.js";
 import { yahooHistory } from "./fx.js";
 import { log } from "./log.js";
@@ -86,7 +88,48 @@ export class StrategyLab {
     get breakEven() {
         return 1 / (1 + config.PAYOUT);
     }
+    // The last results are kept on disk so a restart (every deploy) doesn't leave the robot and
+    // the chart triggers without a table for the whole time the history takes to download.
+    cacheFile = join(dirname(config.SQLITE_PATH), "lab-cache.json");
+    loadCache() {
+        try {
+            const c = JSON.parse(readFileSync(this.cacheFile, "utf8"));
+            const known = new Set(symbols);
+            if (c.payout !== config.PAYOUT ||
+                !Array.isArray(c.evaluations) ||
+                Date.now() - c.updatedAt > config.STRATEGY_REFRESH_HOURS * 3600000)
+                return;
+            this.evaluations = c.evaluations.filter((e) => known.has(e.symbol) && this.specs.has(e.id));
+            this.sources = c.sources || {};
+            this.updatedAt = c.updatedAt;
+            this.historyFrom = c.historyFrom;
+            this.historyTo = c.historyTo;
+            this.status = "RESULTADOS DO ÚLTIMO TESTE CARREGADOS; ATUALIZANDO";
+            log.info({ tested: this.evaluations.length }, "laboratório do cache");
+        }
+        catch {
+            /* first start or unreadable cache: the lab just runs */
+        }
+    }
+    saveCache() {
+        try {
+            const tmp = this.cacheFile + ".tmp";
+            writeFileSync(tmp, JSON.stringify({
+                updatedAt: this.updatedAt,
+                payout: config.PAYOUT,
+                evaluations: this.evaluations,
+                sources: this.sources,
+                historyFrom: this.historyFrom,
+                historyTo: this.historyTo,
+            }));
+            renameSync(tmp, this.cacheFile);
+        }
+        catch (e) {
+            log.warn({ err: e }, "cache do laboratório");
+        }
+    }
     start() {
+        this.loadCache();
         void this.run();
         this.timer = setInterval(() => void this.run(), config.STRATEGY_REFRESH_HOURS * 3600000);
     }
@@ -169,7 +212,7 @@ export class StrategyLab {
             this.status = this.evaluations.length
                 ? "REVALIDANDO COM DADOS NOVOS"
                 : "BAIXANDO HISTÓRICO REAL DE 1 MINUTO";
-            const all = [];
+            const failed = [];
             let from = Infinity, to = 0;
             for (const symbol of symbols) {
                 let cs;
@@ -177,10 +220,9 @@ export class StrategyLab {
                     cs = await this.fetch(symbol);
                 }
                 catch (e) {
-                    // A missing Forex source never blocks the crypto backtest.
-                    if (!isFx(symbol))
-                        throw e;
-                    log.warn({ symbol, err: e }, "forex sem histórico");
+                    // One asset without history never blocks the others; its last results stay.
+                    failed.push(symbol);
+                    log.warn({ symbol, err: e }, "ativo sem histórico");
                     continue;
                 }
                 from = Math.min(from, cs[0].t);
@@ -222,23 +264,38 @@ export class StrategyLab {
                     });
                 });
                 this.worker = undefined;
-                all.push(...evaluations.map((e) => this.sources[symbol] === "Binance"
+                // Each asset's results go live as soon as its test ends, so the first pairs trade
+                // while the rest are still being tested.
+                const fresh = evaluations.map((e) => this.sources[symbol] === "Binance"
                     ? e
                     : {
                         ...e,
                         approved: false,
                         reason: "FONTE DIFERENTE DO FEED AO VIVO — SOMENTE PESQUISA",
-                    }));
+                    });
+                this.evaluations = [
+                    ...this.evaluations.filter((e) => e.symbol !== symbol),
+                    ...fresh,
+                ];
+                if (!this.updatedAt)
+                    this.updatedAt = Date.now();
+                // Saved per asset: a deploy in the middle of a pass keeps what was already tested.
+                this.saveCache();
             }
-            this.evaluations = all;
+            if (failed.length === symbols.length)
+                throw Error(`HISTÓRICO INDISPONÍVEL (${failed.join(", ")})`);
             this.historyFrom = from;
             this.historyTo = to;
             this.updatedAt = Date.now();
             this.error = null;
+            this.saveCache();
+            const all = this.evaluations;
             const approved = all.filter((x) => x.approved).length;
             this.status = approved
                 ? `${approved} ESTRATÉGIA(S) APROVADA(S) NO BACKTEST`
                 : "NENHUMA ESTRATÉGIA SUPEROU O BREAK-EVEN COM SIGNIFICÂNCIA";
+            if (failed.length)
+                this.status += ` · SEM HISTÓRICO: ${failed.slice(0, 6).join(", ")}${failed.length > 6 ? "…" : ""}`;
             log.info({ approved, tested: all.length }, "laboratório de estratégias");
         }
         catch (e) {

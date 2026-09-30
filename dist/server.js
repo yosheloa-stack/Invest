@@ -107,10 +107,6 @@ function view() {
                 reasons,
                 eventTime: s.trade?.t ?? null,
                 quote: s.quote ?? null,
-                chart: cs.slice(-30).map((c) => ({ t: c.end, p: c.c })),
-                indicators: f?.indicators ?? null,
-                features: f?.details ?? null,
-                groups: f?.groups ?? null,
                 forecasts: HORIZONS.map((h) => {
                     const d = decisions.get(s.symbol)?.find((x) => x.horizon === h);
                     if (reasons.length)
@@ -335,8 +331,33 @@ app.get("/api/candles/:symbol", (req, res) => {
         triggers: lab.triggers(s.symbol, cs.filter((c) => c.end < now), limit),
     });
 });
-wss.on("connection", (ws, req) => {
+// Which asset each open screen is showing; those are polled faster (Yahoo assets).
+const watching = new Map();
+function refreshHot() {
+    const hot = new Set(watching.values());
+    for (const t of robot?.open ?? [])
+        hot.add(t.symbol);
+    market.hot = hot;
+}
+wss.on("connection", (ws) => {
     ws.send(JSON.stringify(view()));
+    ws.on("message", (raw) => {
+        try {
+            const m = JSON.parse(String(raw));
+            const symbol = String(m.symbol || "").toUpperCase();
+            if (m.type === "watch" && market.states.has(symbol)) {
+                watching.set(ws, symbol);
+                refreshHot();
+            }
+        }
+        catch {
+            /* ignore malformed client frames */
+        }
+    });
+    ws.on("close", () => {
+        watching.delete(ws);
+        refreshHot();
+    });
     ws.on("error", (e) => log.warn({ err: e }, "dashboard socket"));
 });
 // Forming 1m candle of every asset built from the live trades, pushed 4x per second.
@@ -371,12 +392,16 @@ function liveTicks() {
             ws.send(payload);
 }
 function broadcast() {
+    if (!wss.clients.size)
+        return;
     const payload = JSON.stringify(view());
     for (const ws of wss.clients)
         if (ws.readyState === WebSocket.OPEN) {
             if (ws.bufferedAmount > 1000000)
                 ws.close(1013, "Cliente lento");
-            else
+            // A phone on a slow connection skips a state frame instead of queueing it in front
+            // of the price ticks; the next one (1 s later) carries everything again.
+            else if (ws.bufferedAmount < 64000)
                 ws.send(payload);
         }
 }
@@ -407,6 +432,17 @@ async function initialize() {
     initialized = true;
     stats = await store.stats();
 }
+// Indicators of the last closed candle, recomputed only when a new candle closes (this ran
+// for every asset every second).
+const techCache = new Map();
+function cachedTechnical(s) {
+    const cs = s.candles["1m"], t = cs[cs.length - 1]?.t ?? 0, hit = techCache.get(s.symbol);
+    if (hit && hit.t === t)
+        return hit.i;
+    const i = technical(cs);
+    techCache.set(s.symbol, { t, i });
+    return i;
+}
 // Lets socket messages in between assets; a long synchronous pass makes every feed look late.
 const breathe = () => new Promise((r) => setImmediate(r));
 async function tick() {
@@ -432,8 +468,7 @@ async function tick() {
         }
         for (const s of cycle)
             if (!market.reasons(s).length) {
-                const i = features.get(s.symbol + ":5")?.indicators ??
-                    technical(s.candles["1m"]);
+                const i = features.get(s.symbol + ":5")?.indicators ?? cachedTechnical(s);
                 const volume = s.trades
                     .filter((t) => t.t > now - 60000)
                     .reduce((a, t) => a + t.q, 0);
@@ -554,6 +589,7 @@ async function tick() {
                 ]);
             }
         }
+        refreshHot();
         if (robot && store.healthy) {
             robot.settle(market.rest.now(), priceOf, candleAt);
             for (const s of cycle)
@@ -597,7 +633,7 @@ async function newsTick() {
         newsBusy = false;
     }
 }
-const timer = setInterval(() => void tick(), 1000), tickTimer = setInterval(liveTicks, 100), newsTimer = setInterval(() => void newsTick(), 30000);
+const timer = setInterval(() => void tick(), 1000), tickTimer = setInterval(liveTicks, 250), newsTimer = setInterval(() => void newsTick(), 30000);
 server.listen(config.PORT, "0.0.0.0", () => log.info({ port: config.PORT }, "dashboard iniciado"));
 void initialize()
     .then(() => newsTick())

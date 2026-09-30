@@ -23,8 +23,11 @@ let installed = false;
 export function installUnlock() {
   if (installed) return;
   installed = true;
+  let primed = false;
   const unlock = () => {
     void unlockAudio();
+    if (primed) return;
+    primed = true;
     // iOS only speaks after a first utterance started by a tap.
     try {
       const u = new SpeechSynthesisUtterance(" ");
@@ -34,8 +37,14 @@ export function installUnlock() {
       /* no speech synthesis */
     }
   };
-  window.addEventListener("pointerdown", unlock, { once: true });
-  window.addEventListener("keydown", unlock, { once: true });
+  // Not only the first tap: after the phone sleeps or the tab is hidden the browser suspends
+  // audio again, and a single unlock left the alerts silent for the rest of the visit.
+  window.addEventListener("pointerdown", unlock);
+  window.addEventListener("keydown", unlock);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void unlockAudio();
+    else primed = false;
+  });
 }
 // "Euro / Libra" → "Euro Libra"; unknown tickers are spelled as written.
 export function spokenAsset(symbol: string) {
@@ -64,6 +73,8 @@ export function speak(text: string) {
     const v = ptVoice();
     if (v) u.voice = v;
     u.rate = 1.05;
+    // Chrome can leave the queue paused after the tab was hidden; nothing would ever speak.
+    if (speechSynthesis.paused) speechSynthesis.resume();
     speechSynthesis.speak(u);
   } catch {
     /* speech unavailable */

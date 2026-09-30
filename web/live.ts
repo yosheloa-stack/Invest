@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 // Live forming-candle store fed by the 4x-per-second "tick" frames of the dashboard socket.
 // Kept outside React so the chart can redraw without re-rendering the whole page.
 export type Bar = {
@@ -50,3 +50,25 @@ export const useTicks = () =>
     () => version,
     () => version,
   );
+// Same as useTicks but re-renders at most once per `ms`: for long lists (ticker tape,
+// watchlist) where redrawing 57 rows on every price frame slowed phones down.
+export function useSlowTicks(ms = 1000) {
+  const [, setN] = useState(0);
+  useEffect(() => {
+    let last = 0,
+      timer: ReturnType<typeof setTimeout> | undefined;
+    const off = subscribe(() => {
+      if (timer) return;
+      const wait = Math.max(0, last + ms - Date.now());
+      timer = setTimeout(() => {
+        timer = undefined;
+        last = Date.now();
+        setN((n) => n + 1);
+      }, wait);
+    });
+    return () => {
+      off();
+      clearTimeout(timer);
+    };
+  }, [ms]);
+}

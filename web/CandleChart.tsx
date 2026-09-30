@@ -202,6 +202,11 @@ export default function CandleChart({
     [reading, setReading] = useState<Reading | null>(null),
     [minute, setMinute] = useState(0);
   const p = useMemo(() => params(focus?.id), [focus?.id]);
+  // The parent passes a new signals array on every render; redraw the marks only when a
+  // signal actually changes (candle-pattern and trigger marks are costly to rebuild).
+  const signalsKey = signals
+    .map((x) => `${x.id}:${x.status}:${x.exitAt ?? ""}`)
+    .join("|");
   useEffect(() => {
     const need = studiesFor(focus?.id);
     if (need.length)
@@ -783,14 +788,19 @@ export default function CandleChart({
           text: r.result === "WIN" ? "✓" : r.result === "LOSS" ? "✗" : "=",
         });
     }
-    // Candle patterns: a dot on every one, the name on the newest ones that have room.
+    // Candle patterns: only the recent ones (dots all over the history hid the candles), the
+    // name on the newest three that have room.
     if (studies.has("candle")) {
-      const marks = candleMarks(bars, tf, tf === 1 ? 60 : 120);
-      let room = Infinity;
+      const marks = candleMarks(bars, tf, 30);
+      let room = Infinity,
+        names = 0;
       for (let k = marks.length - 1; k >= 0; k--) {
         const { t, hit } = marks[k],
-          named = (room - t) / (tf * 60000) >= 8;
-        if (named) room = t;
+          named = names < 3 && (room - t) / (tf * 60000) >= 10;
+        if (named) {
+          room = t;
+          names++;
+        }
         out.push({
           time: bucket(t),
           position: hit.bias > 0 ? "belowBar" : "aboveBar",
@@ -810,10 +820,11 @@ export default function CandleChart({
     });
     unique.sort((a, b) => Number(a.time) - Number(b.time));
     markers.current.setMarkers(unique);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     data,
     focus,
-    signals,
+    signalsKey,
     minute,
     tf,
     theme,

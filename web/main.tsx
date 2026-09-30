@@ -36,7 +36,14 @@ import Auth from "./Auth";
 import SignalActivity from "./SignalActivity";
 import { BrandMark, CoinIcon } from "./Icons";
 import ThemeToggle from "./ThemeToggle";
-import { lastMove, liveBar, pushTick, useTicks, lastServerTime } from "./live";
+import {
+  lastMove,
+  liveBar,
+  pushTick,
+  useTicks,
+  useSlowTicks,
+  lastServerTime,
+} from "./live";
 import { FAMILY_TEXT, directionText } from "./studies";
 import CandleChart from "./CandleChart";
 import SignalDock from "./SignalDock";
@@ -71,6 +78,14 @@ const TABS: { id: Tab; label: string; icon: typeof Activity }[] = [
   { id: "stats", label: "Desempenho", icon: ChartColumnIncreasing },
   { id: "system", label: "Sistema", icon: Settings2 },
 ];
+// The asset on screen; the server reads it more often (Forex, gold, indices, stocks).
+let socket: WebSocket | undefined,
+  watched = "";
+function watch(symbol: string) {
+  watched = symbol;
+  if (symbol && socket?.readyState === WebSocket.OPEN)
+    socket.send(JSON.stringify({ type: "watch", symbol }));
+}
 function useLiveState(enabled: boolean) {
   const [state, setState] = useState<State | null>(null),
     [connected, setConnected] = useState(false),
@@ -85,7 +100,11 @@ function useLiveState(enabled: boolean) {
       ws = new WebSocket(
         `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`,
       );
-      ws.onopen = () => setConnected(true);
+      ws.onopen = () => {
+        setConnected(true);
+        socket = ws;
+        watch(watched);
+      };
       ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
@@ -175,6 +194,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     const t = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(t);
   }, []);
+  useEffect(() => watch(selected), [selected]);
   const select = (s: string) => {
     setSelected(s);
     try {
@@ -281,6 +301,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         now={serverNow}
         prices={prices}
         lab={state?.strategies}
+        robot={state?.robot}
         onOpen={open}
       />
     </div>
@@ -316,6 +337,11 @@ function liveChange(a: State["assets"][number]) {
 }
 const signed = (x: number | null | undefined) =>
   x == null ? "—" : `${x >= 0 ? "+" : ""}${pct(x, 2)}`;
+function LiveChange({ asset }: { asset: State["assets"][number] }) {
+  useTicks();
+  const ch = liveChange(asset);
+  return <span className={(ch ?? 0) >= 0 ? "up" : "down"}>{signed(ch)}</span>;
+}
 function TickerTape({
   state,
   onOpen,
@@ -323,7 +349,7 @@ function TickerTape({
   state: State | null;
   onOpen: (s: string) => void;
 }) {
-  useTicks();
+  useSlowTicks(1000);
   const list = state?.assets || [];
   if (!list.length) return <div className="tape" />;
   const row = (dup: boolean) =>
@@ -405,7 +431,7 @@ function Watchlist({
   selected: string;
   onSelect: (s: string) => void;
 }) {
-  useTicks();
+  useSlowTicks(1000);
   return (
     <div className="tv-watch">
       <div className="tv-watch-head">
@@ -458,7 +484,8 @@ function TradeView({
   fresh: boolean;
   now: number;
 }) {
-  useTicks();
+  // No useTicks here: the whole screen (chart, robot, panels) re-rendering on every price
+  // frame made the page lag behind the market. Live numbers re-render on their own.
   const fullscreen = useChartFullscreen();
   const [focusId, setFocusId] = useState<string | null>(null),
     [side, setSide] = useState<SideTab>("robot"),
@@ -516,12 +543,11 @@ function TradeView({
         <p>Conectando ao mercado…</p>
       </div>
     );
-  const ch = liveChange(asset),
-    news = (state.news || [])
-      .filter((n) =>
-        n.classification?.assets.some((x) => ticker(selected).startsWith(x)),
-      )
-      .slice(0, 6);
+  const news = (state.news || [])
+    .filter((n) =>
+      n.classification?.assets.some((x) => ticker(selected).startsWith(x)),
+    )
+    .slice(0, 6);
   const SIDE: { id: SideTab; label: string; icon: typeof Activity }[] = [
     { id: "robot", label: "Robô", icon: Bot },
     { id: "radar", label: "Radar", icon: RadarIcon },
@@ -600,9 +626,7 @@ function TradeView({
                 fallback={asset.price}
                 className="big"
               />
-              <span className={(ch ?? 0) >= 0 ? "up" : "down"}>
-                {signed(ch)}
-              </span>
+              <LiveChange asset={asset} />
             </div>
           </div>
           <section className="side-block">
