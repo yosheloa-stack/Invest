@@ -9,6 +9,14 @@ import avax from "cryptocurrency-icons/svg/color/avax.svg";
 import ltc from "cryptocurrency-icons/svg/color/ltc.svg";
 import link from "cryptocurrency-icons/svg/color/link.svg";
 import eur from "cryptocurrency-icons/svg/color/eur.svg";
+import trx from "cryptocurrency-icons/svg/color/trx.svg";
+import dot from "cryptocurrency-icons/svg/color/dot.svg";
+import bch from "cryptocurrency-icons/svg/color/bch.svg";
+import uni from "cryptocurrency-icons/svg/color/uni.svg";
+import atom from "cryptocurrency-icons/svg/color/atom.svg";
+import matic from "cryptocurrency-icons/svg/color/matic.svg";
+import etc from "cryptocurrency-icons/svg/color/etc.svg";
+import xlm from "cryptocurrency-icons/svg/color/xlm.svg";
 import gbp from "cryptocurrency-icons/svg/color/gbp.svg";
 import jpy from "cryptocurrency-icons/svg/color/jpy.svg";
 import usd from "cryptocurrency-icons/svg/color/usd.svg";
@@ -27,6 +35,14 @@ const COINS: Record<string, string> = {
   LTCUSDT: ltc,
   LINKUSDT: link,
   EURUSDT: eur,
+  TRXUSDT: trx,
+  DOTUSDT: dot,
+  BCHUSDT: bch,
+  UNIUSDT: uni,
+  ATOMUSDT: atom,
+  POLUSDT: matic,
+  ETCUSDT: etc,
+  XLMUSDT: xlm,
 };
 export function CoinIcon({
   symbol,

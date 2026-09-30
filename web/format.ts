@@ -2,7 +2,8 @@ export const pct = (n: number | null | undefined, digits = 1) =>
   n == null ? "—" : `${(n * 100).toFixed(digits).replace(".", ",")}%`;
 export const price = (n: number | null | undefined) => {
   if (n == null) return "—";
-  const digits = n >= 1000 ? 2 : n >= 10 ? 3 : 5;
+  const digits =
+    n >= 1000 ? 2 : n >= 10 ? 3 : n >= 0.01 ? 5 : n >= 0.0001 ? 7 : 9;
   return n.toLocaleString("pt-BR", {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
@@ -42,6 +43,19 @@ export const COIN_NAMES: Record<string, string> = {
   LTCUSDT: "Litecoin",
   LINKUSDT: "Chainlink",
   EURUSDT: "Euro / Tether · Binance spot",
+  TRXUSDT: "TRON",
+  DOTUSDT: "Polkadot",
+  TONUSDT: "Toncoin",
+  SHIBUSDT: "Shiba Inu",
+  PEPEUSDT: "Pepe",
+  BCHUSDT: "Bitcoin Cash",
+  NEARUSDT: "NEAR",
+  SUIUSDT: "Sui",
+  UNIUSDT: "Uniswap",
+  ATOMUSDT: "Cosmos",
+  POLUSDT: "Polygon",
+  ETCUSDT: "Ethereum Classic",
+  XLMUSDT: "Stellar",
   EURUSD: "Euro / Dólar",
   GBPUSD: "Libra / Dólar",
   USDJPY: "Dólar / Iene",

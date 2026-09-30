@@ -238,7 +238,7 @@ export default function CandleChart({
     const fmt = {
       type: "custom" as const,
       formatter: (x: number) => price(x),
-      minMove: 0.00001,
+      minMove: 0.000000001,
     };
     const line = (color: string, width: 1 | 2 = 1, style = LineStyle.Solid) =>
       c.addSeries(LineSeries, {
