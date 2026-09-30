@@ -124,7 +124,7 @@ export default function SignalDock({
       title={permission}
       aria-label={alerts ? permission : "Ligar avisos"}
     >
-      {alerts ? <Bell size={18} /> : <BellOff size={18} />}
+      {alerts ? <Bell size={15} /> : <BellOff size={15} />}
       <span>{alerts ? "Avisos ligados" : "Ligar avisos"}</span>
     </button>
   );
@@ -143,8 +143,8 @@ export default function SignalDock({
               {!fresh
                 ? "Aguarde a reconexão. Os resultados ficam no histórico."
                 : lab?.approved
-                  ? `${lab.approved} estratégia(s) aprovada(s) vigiando o mercado. O aviso aparece aqui na hora.`
-                  : "Nenhuma estratégia passou no teste agora. Sem entrada é melhor do que entrada ruim."}
+                  ? `${lab.approved} estratégia(s) aprovada(s) vigiando o mercado`
+                  : "Nenhuma estratégia aprovada agora · sem entrada é melhor que entrada ruim"}
             </p>
           </div>
         </div>
