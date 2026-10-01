@@ -203,7 +203,9 @@ export default function CandleChart({
       () => new Set(["sr", "candle", "ema", "vol", "trend", "fib"]),
     ),
     [reading, setReading] = useState<Reading | null>(null),
-    [minute, setMinute] = useState(0);
+    [minute, setMinute] = useState(0),
+    [structureTick, setStructureTick] = useState(0);
+  const lastStructurePaint = useRef(0);
   const p = useMemo(() => params(focus?.id), [focus?.id]);
   // The parent passes a new signals array on every render; redraw the marks only when a
   // signal actually changes (candle-pattern and trigger marks are costly to rebuild).
@@ -403,6 +405,8 @@ export default function CandleChart({
     L.bbDn.applyOptions({ color: C.bb });
     L.bbMid.applyOptions({ color: C.orange });
     L.vwap.applyOptions({ color: C.vwap });
+    L.lta.applyOptions({ color: C.up, lineWidth: 4, lineStyle: LineStyle.Solid });
+    L.ltb.applyOptions({ color: C.down, lineWidth: 4, lineStyle: LineStyle.Solid });
     rsi.current?.applyOptions({ color: C.rsi });
     for (const l of rsiLevels.current) l.applyOptions({ color: C.crosshair });
     mark.current?.applyOptions({
@@ -715,6 +719,13 @@ export default function CandleChart({
         }
         glide(bucket);
         paintLast();
+        // LTA/LTB, Fibonacci and S/R used to refresh only when a new minute
+        // started. On live FX that made the structural drawing look frozen/missing.
+        const now = performance.now();
+        if (now - lastStructurePaint.current >= 1000) {
+          lastStructurePaint.current = now;
+          setStructureTick((x) => x + 1);
+        }
         setLeft(countdown(start + size - (lastServerTime() || Date.now())));
       }),
     [symbol, p, studies, hover, tf],
@@ -985,7 +996,7 @@ export default function CandleChart({
         title: `Fib ${(f * 100).toFixed(1).replace(".0","")}%`,
       });
     });
-  }, [minute, tf, studies, theme, data]);
+  }, [minute, structureTick, tf, studies, theme, data]);
 
   // Support/resistance of the visible timeframe as price lines, plus the market reading.
   useEffect(() => {
@@ -1029,7 +1040,7 @@ export default function CandleChart({
         title: `${x.kind === "sup" ? "Suporte" : "Resistência"} ${x.touches}x`,
       }),
     );
-  }, [minute, tf, studies, theme, data]);
+  }, [minute, structureTick, tf, studies, theme, data]);
   const toggle = (s: Study) =>
     setStudies((x) => {
       const n = new Set(x);
