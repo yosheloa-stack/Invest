@@ -67,25 +67,28 @@ function parse(res, interval) {
 }
 // Forex quotes skip quiet minutes and the weekend; indicators need a continuous
 // series, so missing bars repeat the previous close as a flat candle.
-export function fillGaps(cs, ms) {
+export function fillGaps(cs, ms, maxSyntheticBars = Number.POSITIVE_INFINITY) {
     const out = [];
     for (const c of cs) {
         const prev = out[out.length - 1];
         if (prev && c.t <= prev.t)
             continue;
-        if (prev)
-            for (let t = prev.t + ms; t < c.t; t += ms)
-                out.push({
-                    t,
-                    end: t + ms - 1,
-                    o: prev.c,
-                    h: prev.c,
-                    l: prev.c,
-                    c: prev.c,
-                    v: 1,
-                    buy: 0.5,
-                    quote: 0,
-                });
+        if (prev) {
+            const missing = Math.max(0, Math.floor((c.t - prev.t) / ms) - 1);
+            if (missing <= maxSyntheticBars)
+                for (let t = prev.t + ms; t < c.t; t += ms)
+                    out.push({
+                        t,
+                        end: t + ms - 1,
+                        o: prev.c,
+                        h: prev.c,
+                        l: prev.c,
+                        c: prev.c,
+                        v: 1,
+                        buy: 0.5,
+                        quote: 0,
+                    });
+        }
         out.push(c);
     }
     return out;
