@@ -68,14 +68,22 @@ function ptVoice() {
 export function speak(text: string) {
   if (!voiceOn() || !("speechSynthesis" in window)) return;
   try {
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = "pt-BR";
-    const v = ptVoice();
-    if (v) u.voice = v;
-    u.rate = 1.05;
-    // Chrome can leave the queue paused after the tab was hidden; nothing would ever speak.
-    if (speechSynthesis.paused) speechSynthesis.resume();
-    speechSynthesis.speak(u);
+    const say = () => {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "pt-BR";
+      const v = ptVoice();
+      if (v) u.voice = v;
+      u.rate = 0.98;
+      u.volume = 1;
+      if (speechSynthesis.paused) speechSynthesis.resume();
+      // An old/blank priming utterance can hold the iOS queue. Entry alerts are
+      // more important than queued speech, so always replace the queue.
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    };
+    say();
+    // Safari may not have populated voices on the first call.
+    if (!ptVoice()) setTimeout(say, 120);
   } catch {
     /* speech unavailable */
   }
@@ -85,4 +93,4 @@ export const entryPhrase = (
   symbol: string,
   minutes: number,
 ) =>
-  `${direction === "COMPRA" ? "Compra" : "Venda"} no ${spokenAsset(symbol)}, expiração ${minutes} minutos`;
+  `Atenção. ${direction === "COMPRA" ? "Compra" : "Venda"} em ${spokenAsset(symbol)}. Expiração de ${minutes} minutos.`;
