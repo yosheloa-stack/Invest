@@ -200,7 +200,7 @@ export default function CandleChart({
     [menu, setMenu] = useState(false),
     [showTriggers, setShowTriggers] = useState(false),
     [studies, setStudies] = useState<Set<Study>>(
-      () => new Set(["sr", "candle", "ema", "vol"]),
+      () => new Set(["sr", "candle", "ema", "vol", "trend", "fib"]),
     ),
     [reading, setReading] = useState<Reading | null>(null),
     [minute, setMinute] = useState(0);
@@ -897,7 +897,7 @@ export default function CandleChart({
         c.createPriceLine({
           price: v,
           color,
-          lineWidth: 3,
+          lineWidth: 4,
           lineStyle: LineStyle.Solid,
           axisLabelVisible: true,
           title,
@@ -920,21 +920,21 @@ export default function CandleChart({
         : p.bias < 0
           ? pal.current.down
           : pal.current.muted;
-    const add = (v: number | null, title: string, style: LineStyle) =>
+    const add = (v: number | null, title: string, width: 2 | 3 | 4) =>
       v != null &&
       patternSr.current.push(
         c.createPriceLine({
           price: v,
           color,
-          lineWidth: 2,
-          lineStyle: style,
+          lineWidth: width,
+          lineStyle: LineStyle.Solid,
           axisLabelVisible: true,
           title,
         }),
       );
-    add(p.level, `${p.name}: rompe`, LineStyle.Solid);
-    add(p.target, "Alvo", LineStyle.Dashed);
-    add(p.invalid, "Invalida", LineStyle.SparseDotted);
+    add(p.level, `${p.name}: rompe`, 4);
+    add(p.target, "Alvo", 3);
+    add(p.invalid, "Invalida", 3);
   }, [
     patternLevels?.id,
     patternLevels?.level,
@@ -997,7 +997,7 @@ export default function CandleChart({
         all
           .filter((x) => x.kind === k)
           .sort((a, b) => Math.abs(a.price - last) - Math.abs(b.price - last))
-          .slice(0, 2),
+          .slice(0, 1),
       sups = near("sup"),
       ress = near("res");
     const ctx = priceContext(s, j);
