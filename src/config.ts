@@ -80,6 +80,9 @@ const schema = z.object({
     .default(
       "XAUUSD,XAGUSD,USOIL,US100,US500,US30,GER40,AAPL,TSLA,AMZN,MSFT,NVDA,META,GOOGL",
     ),
+  // Twelve Data streaming is used for real-time FX when a key is configured.
+  // Yahoo remains only as historical/bootstrap and automatic fallback.
+  TWELVE_DATA_API_KEY: z.string().trim().default(""),
   FX_POLL_MS: z.coerce.number().int().min(2000).default(8000),
   FX_STALE_MS: z.coerce.number().int().min(5000).default(30000),
 });
