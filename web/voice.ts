@@ -24,14 +24,32 @@ export function installUnlock() {
   if (installed) return;
   installed = true;
   let primed = false;
+  try {
+    const refresh = () => {
+      voice = undefined;
+      voicesReady = speechSynthesis.getVoices().length > 0;
+      void ptVoice();
+    };
+    refresh();
+    speechSynthesis.addEventListener?.("voiceschanged", refresh);
+  } catch {
+    /* no speech synthesis */
+  }
   const unlock = () => {
     void unlockAudio();
     if (primed) return;
     primed = true;
-    // iOS only speaks after a first utterance started by a tap.
+    // iOS/Safari requires speech to be activated by a real user gesture.
+    // Use a tiny audible confirmation instead of a zero-volume utterance, which
+    // Safari may discard and then leave later alerts silent.
     try {
-      const u = new SpeechSynthesisUtterance(" ");
-      u.volume = 0;
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance("Voz ativa");
+      u.lang = "pt-BR";
+      u.volume = 0.18;
+      u.rate = 1.15;
+      const v = ptVoice();
+      if (v) u.voice = v;
       speechSynthesis.speak(u);
     } catch {
       /* no speech synthesis */
@@ -53,6 +71,7 @@ export function spokenAsset(symbol: string) {
   return ticker(symbol).replace("/", " ");
 }
 let voice: SpeechSynthesisVoice | undefined;
+let voicesReady = false;
 function ptVoice() {
   if (voice) return voice;
   try {
@@ -76,14 +95,19 @@ export function speak(text: string) {
       u.rate = 0.98;
       u.volume = 1;
       if (speechSynthesis.paused) speechSynthesis.resume();
-      // An old/blank priming utterance can hold the iOS queue. Entry alerts are
-      // more important than queued speech, so always replace the queue.
       speechSynthesis.cancel();
-      speechSynthesis.speak(u);
+      // Safari behaves more reliably when speak() is queued on the next task
+      // after cancel(), rather than in the same call stack.
+      setTimeout(() => {
+        if (speechSynthesis.paused) speechSynthesis.resume();
+        speechSynthesis.speak(u);
+      }, 40);
     };
+    if (!voicesReady && !ptVoice()) {
+      setTimeout(say, 180);
+      return;
+    }
     say();
-    // Safari may not have populated voices on the first call.
-    if (!ptVoice()) setTimeout(say, 120);
   } catch {
     /* speech unavailable */
   }
