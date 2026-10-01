@@ -76,6 +76,8 @@ function aggregate(bars: Bar[], tf: number): Bar[] {
 }
 type Lines = {
   ema9: ISeriesApi<"Line">;
+  lta: ISeriesApi<"Line">;
+  ltb: ISeriesApi<"Line">;
   ema21: ISeriesApi<"Line">;
   ema50: ISeriesApi<"Line">;
   bbUp: ISeriesApi<"Line">;
@@ -175,6 +177,7 @@ export default function CandleChart({
     rsi = useRef<ISeriesApi<"Line"> | undefined>(undefined),
     rsiLevels = useRef<IPriceLine[]>([]),
     srLines = useRef<IPriceLine[]>([]),
+    fibLines = useRef<IPriceLine[]>([]),
     markers = useRef<ISeriesMarkersPluginApi<Time> | undefined>(undefined),
     mark = useRef<{ applyOptions: (o: object) => void } | undefined>(undefined),
     hist = useRef<Bar[]>([]),
@@ -314,6 +317,8 @@ export default function CandleChart({
       ema50: line(faint(pal.current.ema50)),
       ema21: line(faint(pal.current.ema21)),
       ema9: line(faint(pal.current.ema9)),
+      lta: line(pal.current.up, 2),
+      ltb: line(pal.current.down, 2),
     };
     const s = c.addSeries(CandlestickSeries, {
       upColor: pal.current.up,
@@ -496,6 +501,8 @@ export default function CandleChart({
     vis(L.bbDn, studies.has("bb"));
     vis(L.vwap, studies.has("vwap"));
     vis(L.vol, studies.has("vol"));
+    vis(L.lta, studies.has("trend"));
+    vis(L.ltb, studies.has("trend"));
     paintAll();
   }, [studies, p]);
   const paintAll = () => {
@@ -528,6 +535,30 @@ export default function CandleChart({
     L.vol.setData(
       bars.map((b) => ({ time: sec(b.t), value: b.v, color: volColor(b) })),
     );
+    // LTA/LTB from recent confirmed swing lows/highs. The line is extended to
+    // the current bar so the user sees the active structural slope, not dots.
+    const swing = (low: boolean) => {
+      const pts: { i: number; v: number }[] = [];
+      for (let i = Math.max(2, bars.length - 180); i < bars.length - 2; i++) {
+        const v = low ? bars[i].l : bars[i].h;
+        const ok = low
+          ? v <= bars[i-1].l && v <= bars[i-2].l && v <= bars[i+1].l && v <= bars[i+2].l
+          : v >= bars[i-1].h && v >= bars[i-2].h && v >= bars[i+1].h && v >= bars[i+2].h;
+        if (ok) pts.push({ i, v });
+      }
+      return pts.slice(-2);
+    };
+    const trendData = (pts: {i:number;v:number}[], ascending: boolean) => {
+      if (pts.length < 2 || (ascending ? pts[1].v <= pts[0].v : pts[1].v >= pts[0].v)) return [];
+      const slope = (pts[1].v - pts[0].v) / (pts[1].i - pts[0].i);
+      const end = bars.length - 1;
+      return [
+        { time: sec(bars[pts[0].i].t), value: pts[0].v },
+        { time: sec(bars[end].t), value: pts[0].v + slope * (end - pts[0].i) },
+      ];
+    };
+    L.lta.setData(trendData(swing(true), true));
+    L.ltb.setData(trendData(swing(false), false));
     rsi.current?.setData(at((i) => (p.rsi === 7 ? s.rsi7 : s.rsi14)[i]));
     if (!hover) setLegend(read(bars.length - 1));
     limitZoom();
@@ -912,6 +943,41 @@ export default function CandleChart({
     theme,
     data,
   ]);
+  // Fibonacci of the latest meaningful swing. Only draw it when the visible
+  // structure has a clear directional leg; a sideways chart should not invent Fib levels.
+  useEffect(() => {
+    const cs = candles.current;
+    if (!cs) return;
+    for (const l of fibLines.current) cs.removePriceLine(l);
+    fibLines.current = [];
+    if (!studies.has("fib")) return;
+    const bars = view.current.slice(0, -1).slice(-180);
+    if (bars.length < 30) return;
+    const s = buildSeries(bars), j = s.c.length - 1, ctx = priceContext(s, j);
+    if (!ctx.trend) return;
+    let hi = 0, lo = 0;
+    for (let i = 1; i < bars.length; i++) {
+      if (bars[i].h > bars[hi].h) hi = i;
+      if (bars[i].l < bars[lo].l) lo = i;
+    }
+    const up = ctx.trend === 1, valid = up ? lo < hi : hi < lo;
+    if (!valid) return;
+    const high = bars[hi].h, low = bars[lo].l, range = high - low;
+    if (!(range > 0)) return;
+    const levels = [0, .236, .382, .5, .618, .786, 1];
+    fibLines.current = levels.map((f) => {
+      const v = up ? high - range * f : low + range * f;
+      return cs.createPriceLine({
+        price: v,
+        color: f === .382 || f === .5 || f === .618 ? pal.current.orange : pal.current.crosshair,
+        lineWidth: f === .382 || f === .5 || f === .618 ? 2 : 1,
+        lineStyle: f === .5 ? LineStyle.Solid : LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: `Fib ${(f * 100).toFixed(1).replace(".0","")}%`,
+      });
+    });
+  }, [minute, tf, studies, theme, data]);
+
   // Support/resistance of the visible timeframe as price lines, plus the market reading.
   useEffect(() => {
     const c = candles.current;
@@ -948,8 +1014,8 @@ export default function CandleChart({
         color:
           (x.kind === "sup" ? pal.current.up : pal.current.down) +
           (x.touches >= 3 ? "" : "b3"),
-        lineWidth: x.touches >= 3 ? 2 : 1,
-        lineStyle: LineStyle.Dashed,
+        lineWidth: x.touches >= 3 ? 3 : 2,
+        lineStyle: x.touches >= 3 ? LineStyle.Solid : LineStyle.Dashed,
         axisLabelVisible: true,
         title: `${x.kind === "sup" ? "Suporte" : "Resistência"} ${x.touches}x`,
       }),
@@ -976,7 +1042,11 @@ export default function CandleChart({
               ? "VWAP"
               : s === "sr"
                 ? "Suporte e resistência"
-                : "Volume";
+                : s === "trend"
+                  ? "LTA / LTB"
+                  : s === "fib"
+                    ? "Fibonacci"
+                    : "Volume";
   return (
     <div className="tv-chart">
       <div className="tv-toolbar" role="toolbar" aria-label="Gráfico">
