@@ -65,12 +65,9 @@ export class Robot {
     };
   }
   levelScore() {
-    // Alta: 3 points above break-even; Média: break-even; Baixa: not a loser in history.
-    return this.level === "alta"
-      ? this.breakEven + 0.03
-      : this.level === "media"
-        ? this.breakEven
-        : 0.5;
+    // Precision-first: no operating mode may admit a setup measured below 70%.
+    // "Alta" is stricter; the other modes keep 70% as the hard floor.
+    return this.level === "alta" ? 0.75 : 0.7;
   }
   setLevel(level: RobotLevel) {
     this.level = level;
