@@ -58,6 +58,7 @@ export function installUnlock() {
   // Not only the first tap: after the phone sleeps or the tab is hidden the browser suspends
   // audio again, and a single unlock left the alerts silent for the rest of the visit.
   window.addEventListener("pointerdown", unlock);
+  window.addEventListener("touchend", unlock, { passive: true });
   window.addEventListener("keydown", unlock);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") void unlockAudio();
@@ -101,7 +102,22 @@ export function speak(text: string) {
       setTimeout(() => {
         if (speechSynthesis.paused) speechSynthesis.resume();
         speechSynthesis.speak(u);
-      }, 40);
+        // iOS can accept the utterance but never start it after the tab/audio
+        // session was suspended. Retry once if onstart did not fire.
+        let started = false;
+        u.onstart = () => { started = true; };
+        setTimeout(() => {
+          if (started || speechSynthesis.speaking) return;
+          speechSynthesis.cancel();
+          const retry = new SpeechSynthesisUtterance(text);
+          retry.lang = "pt-BR";
+          retry.rate = 0.98;
+          retry.volume = 1;
+          const rv = ptVoice();
+          if (rv) retry.voice = rv;
+          speechSynthesis.speak(retry);
+        }, 650);
+      }, 60);
     };
     if (!voicesReady && !ptVoice()) {
       setTimeout(say, 180);
