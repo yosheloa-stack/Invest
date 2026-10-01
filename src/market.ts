@@ -74,12 +74,10 @@ export function freezeMarketState(s: MarketState): MarketState {
     quote: s.quote && { ...s.quote },
     book: s.book && { ...s.book },
     trades: s.trades.slice(),
-    candles: {
-      "1m": c["1m"].slice(),
-      "5m": c["5m"].slice(),
-      "15m": c["15m"].slice(),
-      "1h": c["1h"].slice(),
-    },
+    // Candle arrays are replaced (never mutated) when a bar closes, so retaining
+    // their current references gives a stable point-in-time view without copying
+    // hundreds of thousands of references every second.
+    candles: c,
     lastKline: { ...s.lastKline },
   };
 }
@@ -117,7 +115,7 @@ export function feedReasons(
   const grace = isFx(s.symbol) ? stale + 60000 : 5000;
   for (const [tf, ms] of Object.entries(INTERVALS) as [TF, number][]) {
     const a = s.candles[tf];
-    if (a.length < 250 || !contiguous(a, ms))
+    if (a.length < 250 || (!isFx(s.symbol) && !contiguous(a, ms)))
       r.push(`HISTÓRICO ${tf} INSUFICIENTE / GAP`);
     if (
       !a.length ||
@@ -475,6 +473,7 @@ export class MarketData extends EventEmitter {
       const closed = fillGaps(
         bars.filter((c) => c.end < now),
         ms,
+        5,
       ).slice(-1500);
       if (closed.length < 250) throw Error(`Forex ${tf}: só ${closed.length}`);
       s.candles[tf] = closed;
@@ -492,6 +491,7 @@ export class MarketData extends EventEmitter {
     const fresh = fillGaps(
       [...prev.slice(-1), ...closed.filter((c) => c.t > (prev.at(-1)?.t ?? 0))],
       60000,
+      5,
     ).slice(prev.length ? 1 : 0);
     for (const c of fresh) s.candles["1m"] = putCandle(s.candles["1m"], c);
     if (fresh.length) this.emit("candles", s.symbol, "1m", fresh);
@@ -504,17 +504,11 @@ export class MarketData extends EventEmitter {
         t + ms - 1 < now;
         t += ms
       ) {
-        const c =
-          combine(
-            s.candles["1m"].filter((b) => b.t >= t && b.t < t + ms),
-            t,
-            ms,
-          ) ??
-          combine(
-            [{ ...a.at(-1)!, o: a.at(-1)!.c, h: a.at(-1)!.c, l: a.at(-1)!.c }],
-            t,
-            ms,
-          );
+        const c = combine(
+          s.candles["1m"].filter((b) => b.t >= t && b.t < t + ms),
+          t,
+          ms,
+        );
         if (!c) break;
         s.candles[tf] = putCandle(s.candles[tf], c);
         this.emit("candles", s.symbol, tf, [c]);
