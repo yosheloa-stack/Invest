@@ -79,14 +79,16 @@ export function readMarket(symbol, closed, evaluations, live, o) {
         });
     }
     fired.sort((a, b) => Number(b.approved) - Number(a.approved) || b.score - a.score);
-    const eligible = fired.filter((f) => !f.paused &&
+    const eligible = fired.filter((f) => f.approved &&
+        !f.paused &&
         !f.against &&
         f.backtestTrades >= o.minTrades &&
         f.score >= o.minScore &&
         (!o.horizons || o.horizons.includes(f.horizon)));
     // Confirmation: other strategy families that fired the same way and are not losers in history.
     const agree = (f) => new Set(fired
-        .filter((g) => g.direction === f.direction &&
+        .filter((g) => g.approved &&
+        g.direction === f.direction &&
         !g.against &&
         !g.paused &&
         g.score >= 0.5)
