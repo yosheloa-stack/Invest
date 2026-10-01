@@ -289,7 +289,7 @@ export default function CandleChart({
       formatter: (x: number) => price(x),
       minMove: 0.000000001,
     };
-    const line = (color: string, width: 1 | 2 = 1, style = LineStyle.Solid) =>
+    const line = (color: string, width: 1 | 2 | 3 | 4 = 1, style = LineStyle.Solid) =>
       c.addSeries(LineSeries, {
         color,
         lineWidth: width,
@@ -314,9 +314,9 @@ export default function CandleChart({
       bbMid: line(pal.current.orange),
       bbDn: line(pal.current.bb),
       vwap: line(pal.current.vwap, 2),
-      ema50: line(faint(pal.current.ema50)),
-      ema21: line(faint(pal.current.ema21)),
-      ema9: line(faint(pal.current.ema9)),
+      ema50: line(faint(pal.current.ema50), 2),
+      ema21: line(faint(pal.current.ema21), 2),
+      ema9: line(faint(pal.current.ema9), 2),
       lta: line(pal.current.up, 4),
       ltb: line(pal.current.down, 4),
     };
@@ -539,23 +539,30 @@ export default function CandleChart({
     // the current bar so the user sees the active structural slope, not dots.
     const swing = (low: boolean) => {
       const pts: { i: number; v: number }[] = [];
-      for (let i = Math.max(2, bars.length - 180); i < bars.length - 2; i++) {
+      for (let i = Math.max(2, bars.length - 240); i < bars.length - 2; i++) {
         const v = low ? bars[i].l : bars[i].h;
         const ok = low
           ? v <= bars[i-1].l && v <= bars[i-2].l && v <= bars[i+1].l && v <= bars[i+2].l
           : v >= bars[i-1].h && v >= bars[i-2].h && v >= bars[i+1].h && v >= bars[i+2].h;
         if (ok) pts.push({ i, v });
       }
-      return pts.slice(-2);
+      return pts;
     };
+    // Pick the newest valid pair instead of blindly taking the last two swings.
+    // This keeps a visible structural line whenever recent price action contains one.
     const trendData = (pts: {i:number;v:number}[], ascending: boolean) => {
-      if (pts.length < 2 || (ascending ? pts[1].v <= pts[0].v : pts[1].v >= pts[0].v)) return [];
-      const slope = (pts[1].v - pts[0].v) / (pts[1].i - pts[0].i);
-      const end = bars.length - 1;
-      return [
-        { time: sec(bars[pts[0].i].t), value: pts[0].v },
-        { time: sec(bars[end].t), value: pts[0].v + slope * (end - pts[0].i) },
-      ];
+      for (let b = pts.length - 1; b > 0; b--) {
+        for (let a = b - 1; a >= Math.max(0, b - 8); a--) {
+          if (ascending ? pts[b].v <= pts[a].v : pts[b].v >= pts[a].v) continue;
+          const slope = (pts[b].v - pts[a].v) / (pts[b].i - pts[a].i);
+          const end = bars.length - 1;
+          return [
+            { time: sec(bars[pts[a].i].t), value: pts[a].v },
+            { time: sec(bars[end].t), value: pts[a].v + slope * (end - pts[a].i) },
+          ];
+        }
+      }
+      return [];
     };
     L.lta.setData(trendData(swing(true), true));
     L.ltb.setData(trendData(swing(false), false));
@@ -954,13 +961,15 @@ export default function CandleChart({
     const bars = view.current.slice(0, -1).slice(-180);
     if (bars.length < 30) return;
     const s = buildSeries(bars), j = s.c.length - 1, ctx = priceContext(s, j);
-    if (!ctx.trend) return;
     let hi = 0, lo = 0;
     for (let i = 1; i < bars.length; i++) {
       if (bars[i].h > bars[hi].h) hi = i;
       if (bars[i].l < bars[lo].l) lo = i;
     }
-    const up = ctx.trend === 1, valid = up ? lo < hi : hi < lo;
+    // Use the latest completed impulse. priceContext is preferred, but Fib
+    // remains drawable during a pullback/range immediately after that impulse.
+    const up = ctx.trend ? ctx.trend === 1 : hi > lo,
+      valid = up ? lo < hi : hi < lo;
     if (!valid) return;
     const high = bars[hi].h, low = bars[lo].l, range = high - low;
     if (!(range > 0)) return;
