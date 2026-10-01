@@ -676,9 +676,11 @@ export function evaluateSymbol(
             ? wr > o.breakEven
               ? "ACIMA DO BREAK-EVEN, MAS SEM SIGNIFICÂNCIA ESTATÍSTICA"
               : "ABAIXO DO BREAK-EVEN FORA DA AMOSTRA"
-            : r.halves.some((x) => (x.winRate ?? 0) <= o.breakEven)
-              ? "INSTÁVEL: UMA METADE DO TESTE FICOU ABAIXO DO BREAK-EVEN"
-              : "APROVADA";
+            : wr < 0.7
+              ? `ACERTO FORA DA AMOSTRA ABAIXO DE 70% (${(wr * 100).toFixed(1)}%)`
+              : r.halves.some((x) => (x.winRate ?? 0) < 0.65)
+                ? "INSTÁVEL: UMA METADE DO TESTE FICOU ABAIXO DE 65%"
+                : "APROVADA";
       out.push({
         symbol,
         horizon: h,
