@@ -308,6 +308,32 @@ export function both(
   ];
 }
 export function catalog(): StrategySpec[] {
+  // Precision-first catalog: candle/price-action patterns plus structural chart
+  // patterns. Generic indicator-only systems were intentionally removed.
+  // Indicators still exist inside buildSeries only as confirmation/context; they
+  // are not allowed to originate a trade by themselves.
+  const out: StrategySpec[] = [];
+  out.push(...binaryStrategies());
+  out.push(...structuralStrategies());
+  return out.map((spec) => ({
+    ...spec,
+    id: spec.id.includes(":ctx2")
+      ? spec.id
+      : spec.id.replace(/:(seguir|reverter)$/, ":ctx2:$1"),
+    signal: (s, i) => {
+      const d = spec.signal(s, i);
+      if (!d) return 0;
+      // Never allow a candle pattern to fight a confirmed price trend.
+      // Structural patterns already encode their own regime.
+      if (!["lateral", "estrutura", "fibonacci"].includes(spec.family)) {
+        const x = priceContext(s, i);
+        if (x.trend && x.trend !== d) return 0;
+      }
+      return contextAllows(s, i, d) ? d : 0;
+    },
+  }));
+}
+function legacyCatalogUnused(): StrategySpec[] {
   const out: StrategySpec[] = [];
   for (const n of [7, 14])
     for (const lv of [20, 25, 30])
