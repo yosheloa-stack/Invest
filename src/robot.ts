@@ -168,6 +168,7 @@ export function readMarket(
   );
   const eligible = fired.filter(
     (f) =>
+      f.approved &&
       !f.paused &&
       !f.against &&
       f.backtestTrades >= o.minTrades &&
@@ -180,6 +181,7 @@ export function readMarket(
       fired
         .filter(
           (g) =>
+            g.approved &&
             g.direction === f.direction &&
             !g.against &&
             !g.paused &&
