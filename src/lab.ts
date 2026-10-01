@@ -306,6 +306,11 @@ export class StrategyLab {
           },
         );
         this.worker = undefined;
+        // O histórico de 30 dias é grande. Mantê-lo para dezenas de ativos fazia a RAM
+        // crescer durante todo o passe do laboratório. Depois que o worker terminou,
+        // os candles deste ativo não são mais necessários em memória; o próximo ciclo
+        // baixa novamente o período real em vez de trocar estabilidade por cache de RAM.
+        this.history.delete(symbol);
         // Each asset's results go live as soon as its test ends, so the first pairs trade
         // while the rest are still being tested.
         const fresh = evaluations.map((e) =>
