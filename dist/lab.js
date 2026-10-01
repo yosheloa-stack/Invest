@@ -264,6 +264,8 @@ export class StrategyLab {
                     });
                 });
                 this.worker = undefined;
+                // Release the large 30-day candle buffer after this asset is evaluated.
+                this.history.delete(symbol);
                 // Each asset's results go live as soon as its test ends, so the first pairs trade
                 // while the rest are still being tested.
                 const fresh = evaluations.map((e) => this.sources[symbol] === "Binance"
