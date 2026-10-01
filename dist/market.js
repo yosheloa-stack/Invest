@@ -77,12 +77,7 @@ export function freezeMarketState(s) {
         quote: s.quote && { ...s.quote },
         book: s.book && { ...s.book },
         trades: s.trades.slice(),
-        candles: {
-            "1m": c["1m"].slice(),
-            "5m": c["5m"].slice(),
-            "15m": c["15m"].slice(),
-            "1h": c["1h"].slice(),
-        },
+        candles: c,
         lastKline: { ...s.lastKline },
     };
 }
@@ -120,7 +115,7 @@ export function feedReasons(s, now, clockOk) {
     const grace = isFx(s.symbol) ? stale + 60000 : 5000;
     for (const [tf, ms] of Object.entries(INTERVALS)) {
         const a = s.candles[tf];
-        if (a.length < 250 || !contiguous(a, ms))
+        if (a.length < 250 || (!isFx(s.symbol) && !contiguous(a, ms)))
             r.push(`HISTÓRICO ${tf} INSUFICIENTE / GAP`);
         if (!a.length ||
             now - a[a.length - 1].end > ms + grace ||
@@ -449,7 +444,7 @@ export class MarketData extends EventEmitter {
         const now = this.rest.now(), back = { "1m": 3, "5m": 8, "15m": 20, "1h": 70 };
         for (const tf of Object.keys(INTERVALS)) {
             const ms = INTERVALS[tf], { bars } = await yahooChart(s.symbol, tf, now - back[tf] * 86400000, now);
-            const closed = fillGaps(bars.filter((c) => c.end < now), ms).slice(-1500);
+            const closed = fillGaps(bars.filter((c) => c.end < now), ms, 5).slice(-1500);
             if (closed.length < 250)
                 throw Error(`Forex ${tf}: só ${closed.length}`);
             s.candles[tf] = closed;
@@ -462,7 +457,7 @@ export class MarketData extends EventEmitter {
         if (!last)
             throw Error("Forex sem candles recentes");
         const closed = bars.filter((c) => c.end < now), prev = s.candles["1m"];
-        const fresh = fillGaps([...prev.slice(-1), ...closed.filter((c) => c.t > (prev.at(-1)?.t ?? 0))], 60000).slice(prev.length ? 1 : 0);
+        const fresh = fillGaps([...prev.slice(-1), ...closed.filter((c) => c.t > (prev.at(-1)?.t ?? 0))], 60000, 5).slice(prev.length ? 1 : 0);
         for (const c of fresh)
             s.candles["1m"] = putCandle(s.candles["1m"], c);
         if (fresh.length)
@@ -471,8 +466,7 @@ export class MarketData extends EventEmitter {
         for (const tf of ["5m", "15m", "1h"]) {
             const ms = INTERVALS[tf], a = s.candles[tf];
             for (let t = (a.at(-1)?.t ?? Math.floor(now / ms) * ms - ms) + ms; t + ms - 1 < now; t += ms) {
-                const c = combine(s.candles["1m"].filter((b) => b.t >= t && b.t < t + ms), t, ms) ??
-                    combine([{ ...a.at(-1), o: a.at(-1).c, h: a.at(-1).c, l: a.at(-1).c }], t, ms);
+                const c = combine(s.candles["1m"].filter((b) => b.t >= t && b.t < t + ms), t, ms);
                 if (!c)
                     break;
                 s.candles[tf] = putCandle(s.candles[tf], c);
