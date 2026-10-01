@@ -265,11 +265,18 @@ export class Robot {
     void (async () => {
       try {
         const review = await this.ai.review(read, pick, closed);
-        if (review && !review.enter) {
+        // Precision-first: the AI is a veto/confirmation layer, never a source of
+        // direction. When enabled, an uncertain review must not silently become an
+        // entry just because the model said ENTRAR.
+        if (review && (!review.enter || review.confidence < 75)) {
+          const why = !review.enter
+            ? `IA vetou a entrada: ${review.reason}`
+            : `IA sem confiança suficiente (${review.confidence}% < 75%): ${review.reason}`;
           this.reads.set(symbol, {
             ...read,
-            why: `IA vetou a entrada: ${review.reason}`,
-            lines: [...read.lines, `IA vetou: ${review.reason}`],
+            pick: null,
+            why,
+            lines: [...read.lines, why],
           });
           return;
         }
