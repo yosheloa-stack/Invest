@@ -9,10 +9,12 @@ import {
 import type { Candle } from "../src/types";
 export { levelsAt } from "../src/strategies";
 export { priceContext } from "../src/price-context";
-export type Study = "sr" | "candle" | "ema" | "bb" | "vwap" | "vol" | "rsi";
+export type Study = "sr" | "candle" | "ema" | "bb" | "vwap" | "vol" | "rsi" | "fib" | "trend";
 export const STUDIES: { id: Study; label: string }[] = [
   { id: "sr", label: "Suporte e resistência" },
   { id: "candle", label: "Padrões de candle" },
+  { id: "trend", label: "LTA / LTB" },
+  { id: "fib", label: "Fibonacci" },
   { id: "ema", label: "EMA 9/21/50" },
   { id: "bb", label: "Bollinger" },
   { id: "vwap", label: "VWAP" },
@@ -44,8 +46,10 @@ export function studiesFor(id: string | undefined): Study[] {
 function byFamily(family: string | undefined): Study[] {
   switch (family) {
     case "estrutura":
+      return ["sr", "trend"];
     case "lateral":
     case "fibonacci":
+      return ["sr", "fib", "trend"];
     case "sr-toque":
     case "sr-rompimento":
       return ["sr"];
