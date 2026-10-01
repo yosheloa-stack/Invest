@@ -317,8 +317,8 @@ export default function CandleChart({
       ema50: line(faint(pal.current.ema50)),
       ema21: line(faint(pal.current.ema21)),
       ema9: line(faint(pal.current.ema9)),
-      lta: line(pal.current.up, 2),
-      ltb: line(pal.current.down, 2),
+      lta: line(pal.current.up, 4),
+      ltb: line(pal.current.down, 4),
     };
     const s = c.addSeries(CandlestickSeries, {
       upColor: pal.current.up,
@@ -897,8 +897,8 @@ export default function CandleChart({
         c.createPriceLine({
           price: v,
           color,
-          lineWidth: 1,
-          lineStyle: LineStyle.Dotted,
+          lineWidth: 3,
+          lineStyle: LineStyle.Solid,
           axisLabelVisible: true,
           title,
         }),
@@ -970,8 +970,8 @@ export default function CandleChart({
       return cs.createPriceLine({
         price: v,
         color: f === .382 || f === .5 || f === .618 ? pal.current.orange : pal.current.crosshair,
-        lineWidth: f === .382 || f === .5 || f === .618 ? 2 : 1,
-        lineStyle: f === .5 ? LineStyle.Solid : LineStyle.Dashed,
+        lineWidth: f === .382 || f === .5 || f === .618 ? 4 : 3,
+        lineStyle: LineStyle.Solid,
         axisLabelVisible: true,
         title: `Fib ${(f * 100).toFixed(1).replace(".0","")}%`,
       });
@@ -1014,8 +1014,8 @@ export default function CandleChart({
         color:
           (x.kind === "sup" ? pal.current.up : pal.current.down) +
           (x.touches >= 3 ? "" : "b3"),
-        lineWidth: x.touches >= 3 ? 3 : 2,
-        lineStyle: x.touches >= 3 ? LineStyle.Solid : LineStyle.Dashed,
+        lineWidth: x.touches >= 3 ? 4 : 3,
+        lineStyle: LineStyle.Solid,
         axisLabelVisible: true,
         title: `${x.kind === "sup" ? "Suporte" : "Resistência"} ${x.touches}x`,
       }),
