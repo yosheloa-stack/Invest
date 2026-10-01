@@ -463,7 +463,7 @@ export class MarketData extends EventEmitter {
           s.ready = true;
           log.info({ symbol: s.symbol }, "forex pronto");
         }
-        await this.tickFx(s);
+        await this.tickFx(s, streaming);
         s.error = null;
       } catch (e) {
         s.error = "ERRO NA FONTE FOREX";
@@ -534,8 +534,9 @@ export class MarketData extends EventEmitter {
     if (!current || current.t !== minute) {
       // Finalize the previous live minute before starting the new one.
       if (current && current.t < minute) {
-        s.candles["1m"] = putCandle(s.candles["1m"], { ...current, end: current.t + 59999 });
-        this.emit("candles", s.symbol, "1m", [current]);
+        const closed = { ...current, end: current.t + 59999 };
+        s.candles["1m"] = putCandle(s.candles["1m"], closed);
+        this.emit("candles", s.symbol, "1m", [closed]);
       }
       s.forming = {
         t: minute,
@@ -601,7 +602,7 @@ export class MarketData extends EventEmitter {
       this.emit("candles", s.symbol, tf, closed);
     }
   }
-  private async tickFx(s: MarketState) {
+  private async tickFx(s: MarketState, streaming = false) {
     const now = this.rest.now(),
       { price, bars } = await yahooChart(s.symbol, "1m", now - 20 * 60000, now),
       last = bars[bars.length - 1];
@@ -639,32 +640,36 @@ export class MarketData extends EventEmitter {
     // A stale quote (market closed) keeps its own timestamp so the feed shows as late.
     const p = price ?? last.c,
       at = last.t >= now - 3 * 60000 ? now : last.end;
-    if (last.end >= now) {
-      s.forming = {
-        ...last,
-        c: p,
-        h: Math.max(last.h, p),
-        l: Math.min(last.l, p),
+    // Never mix a delayed Yahoo forming bar/quote into a realtime FX candle.
+    // Doing that can move O/H/L/C backwards and produces clipped/deformed candles.
+    if (!streaming) {
+      if (last.end >= now) {
+        s.forming = {
+          ...last,
+          c: p,
+          h: Math.max(last.h, p),
+          l: Math.min(last.l, p),
+        };
+        s.formingAt = now;
+      }
+      s.trade = {
+        id: (s.trade?.id ?? 0) + 1,
+        t: at,
+        received: at,
+        p,
+        q: 0,
+        buy: true,
       };
-      s.formingAt = now;
+      s.quote = { t: at, bid: p, ask: p };
+      s.book = {
+        t: at,
+        id: (s.book?.id ?? 0) + 1,
+        bidQty: 1,
+        askQty: 1,
+        imbalance: 0,
+        change: 0,
+      };
     }
-    s.trade = {
-      id: (s.trade?.id ?? 0) + 1,
-      t: at,
-      received: at,
-      p,
-      q: 0,
-      buy: true,
-    };
-    s.quote = { t: at, bid: p, ask: p };
-    s.book = {
-      t: at,
-      id: (s.book?.id ?? 0) + 1,
-      bidQty: 1,
-      askQty: 1,
-      imbalance: 0,
-      change: 0,
-    };
   }
   stop() {
     this.stopped = true;
