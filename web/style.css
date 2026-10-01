@@ -2341,18 +2341,38 @@ tr.ok td {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  width: 100%;
+  width: 100vw;
   height: 100dvh;
   max-height: none;
-  overflow: auto;
-  display: block;
+  overflow: hidden;
+  display: flex;
   background: var(--bg);
+  border: 0;
+  border-radius: 0;
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
     env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 .chart-expanded .tv-chart {
-  height: 70dvh;
-  min-height: 340px;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.chart-expanded .tv-stage {
+  flex: 1 1 auto;
+  height: auto !important;
+  min-height: 0 !important;
+}
+.chart-expanded > :not(.tv-chart) {
+  display: none !important;
+}
+.chart-expanded .tv-toolbar {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.chart-expanded .tv-notes {
+  max-width: min(620px, calc(100% - 90px));
 }
 @media (max-width: 700px) {
   .operation-grid {
