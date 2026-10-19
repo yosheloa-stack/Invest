@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="pt-BR" data-sky="sun">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1c1019">
+<title>Hemilayne, essa surpresa é pra você</title>
+<meta name="description" content="Uma surpresa feita com carinho para a Hemilayne.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Allura&family=Figtree:wght@400;500;600&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --cream:#fbefe4;
+  --soft:#e9d6d2;
+  --rose:#f3a6b8;
+  --bg:#1c1019;
+  --accent:#f4b26a;
+  --serif:'Fraunces',Georgia,'Times New Roman',serif;
+  --sans:'Figtree',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --script:'Allura','Brush Script MT',cursive;
+  --stage:46vw;
+}
+html[data-sky="night"]{--bg:#0f0c22;--accent:#c1b2ff}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--cream);font-family:var(--sans);font-size:17px;line-height:1.75;overflow-x:hidden;transition:background 1.6s ease}
+body.locked{overflow:hidden}
+img{display:block;max-width:100%}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:6px}
+
+/* ---------- fixed stage (photos) ---------- */
+.stage{position:fixed;inset:0 auto 0 0;width:var(--stage);height:100svh;display:grid;place-items:center;z-index:0}
+.frame{position:relative;width:min(80%,430px);height:min(84svh,760px);border-radius:999px 999px 28px 28px;overflow:hidden;box-shadow:0 40px 90px #0009,0 0 0 1px #ffffff22}
+.frame img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity 1.8s ease;animation:drift 26s ease-in-out infinite alternate}
+.frame .night{opacity:0}
+html[data-sky="night"] .frame .night{opacity:1}
+html[data-sky="night"] .frame .sun{opacity:0}
+.frame:after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,transparent 55%,#0a061888)}
+@keyframes drift{to{transform:scale(1.08)}}
+
+main{position:relative;z-index:2;margin-left:var(--stage)}
+.ch{min-height:100svh;display:flex;align-items:center;padding:12vh clamp(24px,5vw,80px)}
+.col{width:min(100%,34rem)}
+
+/* ---------- type ---------- */
+h1,h2,h3{font-family:var(--serif);font-weight:400;margin:0;line-height:1.04;font-variation-settings:'opsz' 144;text-wrap:balance}
+h1{font-size:clamp(54px,9.2vw,128px);letter-spacing:-.04em;font-weight:300}
+h2{font-size:clamp(38px,4.8vw,68px);letter-spacing:-.03em;margin-bottom:.55em}
+h3{font-size:1.35rem;letter-spacing:-.01em}
+em{font-style:italic;font-weight:300;color:var(--rose)}
+p{margin:0 0 1.15em;color:#f6e6e0;max-width:34rem}
+.lead{font-family:var(--serif);font-size:clamp(20px,2.2vw,26px);line-height:1.5;font-weight:300;color:var(--cream)}
+.script{font-family:var(--script);font-size:clamp(34px,4vw,52px);color:var(--accent);line-height:1;margin:0 0 .25em;display:block}
+.hint{font-size:14px;color:#f6e6e0b0}
+
+/* ---------- top bar ---------- */
+.bar{position:fixed;z-index:50;inset:0 0 auto 0;display:flex;justify-content:space-between;align-items:center;padding:16px 20px;pointer-events:none}
+.bar>*{pointer-events:auto}
+.mark{font-family:var(--script);font-size:30px;color:var(--cream);text-shadow:0 2px 14px #0008;text-decoration:none}
+.music{display:flex;align-items:center;gap:10px;border:1px solid #ffffff45;background:#150d22b8;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-radius:99px;padding:9px 16px 9px 12px;font-size:13px}
+.eq{display:flex;gap:2px;align-items:flex-end;height:14px}
+.eq i{width:3px;height:30%;background:var(--accent);border-radius:2px}
+.music.on .eq i{animation:eq 1s ease-in-out infinite}
+.music.on .eq i:nth-child(2){animation-delay:.2s}.music.on .eq i:nth-child(3){animation-delay:.45s}
+@keyframes eq{50%{height:100%}}
+.progress{position:fixed;z-index:60;top:0;left:0;height:2px;width:0;background:linear-gradient(90deg,var(--accent),var(--rose))}
+
+/* ---------- reveal (opacity only, gentle) ---------- */
+.rv{opacity:0;transition:opacity 1.1s ease}
+.rv.in{opacity:1}
+
+/* ---------- hero ---------- */
+.name{display:block;font-style:italic}
+.name span{display:inline-block;opacity:0;transform:translateY(.45em);filter:blur(10px)}
+body.go .name span{animation:rise 1.5s cubic-bezier(.2,.8,.2,1) forwards;animation-delay:calc(var(--i)*70ms + 200ms)}
+@keyframes rise{to{opacity:1;transform:none;filter:none}}
+.hero .lead{margin:.9em 0 1.2em}
+.btn{display:inline-flex;align-items:center;gap:10px;border:1px solid #ffffff55;background:#ffffff14;color:var(--cream);padding:15px 26px;border-radius:99px;transition:background .25s,transform .25s;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.btn:hover{background:#ffffff2b}
+.btn:active{transform:scale(.96)}
+.btn.solid{background:var(--cream);color:#2a1424;border-color:transparent;font-weight:600}
+.btn.solid:hover{background:#fff}
+.scrollcue{margin-top:2.4em;font-size:13px;color:#f6e6e0a0;display:flex;align-items:center;gap:12px}
+.scrollcue:before{content:'';width:42px;height:1px;background:currentColor}
+
+/* ---------- reasons list ---------- */
+.reasons{list-style:none;padding:0;margin:1.6em 0 0;border-top:1px solid #ffffff26}
+.reasons li{padding:16px 0;border-bottom:1px solid #ffffff26;display:grid;grid-template-columns:1fr;gap:2px}
+.reasons b{font-family:var(--serif);font-weight:400;font-size:1.2rem;color:var(--cream)}
+.reasons span{font-size:15px;color:#f6e6e0c0;line-height:1.55}
+
+/* ---------- counter + timeline ---------- */
+.big{font-family:var(--serif);font-weight:300;font-size:clamp(88px,13vw,170px);line-height:.9;letter-spacing:-.05em;color:var(--cream)}
+.big small{font-size:.22em;letter-spacing:0;font-style:italic;color:var(--rose);margin-left:.15em}
+.sub{font-family:var(--serif);font-size:1.3rem;color:var(--soft);margin:.4em 0 1.4em;font-variant-numeric:tabular-nums}
+.timeline{list-style:none;margin:2em 0 0;padding:0 0 0 26px;position:relative}
+.timeline:before{content:'';position:absolute;left:5px;top:8px;bottom:8px;width:1px;background:#ffffff33}
+.timeline li{position:relative;padding:0 0 22px}
+.timeline li:before{content:'';position:absolute;left:-26px;top:9px;width:11px;height:11px;border-radius:50%;background:var(--bg);border:1.5px solid #ffffff66}
+.timeline li.done:before{background:var(--rose);border-color:var(--rose)}
+.timeline li.next:before{background:var(--accent);border-color:var(--accent);box-shadow:0 0 0 6px #f4b26a30}
+.timeline b{font-family:var(--serif);font-weight:400;font-size:1.15rem;display:block}
+.timeline span{font-size:14px;color:#f6e6e0b0}
+
+/* ---------- calendar ---------- */
+.calendar{margin:1.6em 0 0;max-width:24rem;border:1px solid #ffffff2e;background:#ffffff0d;border-radius:22px;padding:20px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.calhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.calhead strong{font-family:var(--serif);font-weight:400;font-size:1.4rem;text-transform:capitalize}
+.calhead button{width:36px;height:36px;border-radius:50%;border:1px solid #ffffff36;background:#ffffff14}
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.days span{display:grid;place-items:center;aspect-ratio:1;font-size:14px;border-radius:50%}
+.days .wd{font-size:11px;color:#f6e6e099}
+.days .today{background:var(--cream);color:#2a1424;font-weight:600}
+.days .special{box-shadow:inset 0 0 0 1.5px var(--rose);color:var(--rose);font-weight:600}
+.days .special.today{background:var(--rose);color:#2a1424}
+.legend{display:flex;gap:18px;margin-top:14px;font-size:13px;color:#f6e6e0b0}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
+
+/* ---------- promises ---------- */
+.promises{margin:1.6em 0 0;padding:0;list-style:none}
+.promises li{padding:18px 0;border-top:1px solid #ffffff26}
+.promises li:last-child{border-bottom:1px solid #ffffff26}
+.promises h3{margin-bottom:4px}
+.promises p{margin:0;font-size:15.5px;color:#f6e6e0c8;line-height:1.6}
+
+/* ---------- verses ---------- */
+.verse{font-family:var(--serif);font-style:italic;font-weight:300;font-size:clamp(28px,3.6vw,46px);line-height:1.2;letter-spacing:-.02em;margin:0 0 .35em;color:var(--cream);text-wrap:balance}
+.cite{font-size:14px;color:var(--accent);margin-bottom:2.2em;display:block}
+
+/* ---------- letter ---------- */
+.envelope{display:block;width:min(100%,340px);height:200px;position:relative;border:1px solid #ffffff40;border-radius:16px;background:linear-gradient(150deg,#a85f7c,#52294f);box-shadow:0 24px 60px #0007;margin:1.6em 0 1em;transition:transform .4s;text-align:center}
+.envelope:before{content:'';position:absolute;inset:0;border-radius:16px;clip-path:polygon(0 0,50% 60%,100% 0);background:#d792aa;transition:transform .6s;transform-origin:top}
+.envelope.open:before{transform:rotateX(180deg) translateY(-1px);opacity:.55}
+.envelope:hover{transform:translateY(-6px) rotate(-1.5deg)}
+.envelope span{position:absolute;left:0;right:0;bottom:30px;font-family:var(--script);font-size:44px;line-height:1;text-shadow:0 2px 10px #0006}
+.letter{display:grid;grid-template-rows:0fr;transition:grid-template-rows .9s ease}
+.letter.open{grid-template-rows:1fr}
+.letter>div{overflow:hidden}
+.paper{margin-top:1em;padding:28px 26px 10px;border-radius:6px;background:#fbefe4;color:#3b2230}
+.paper p{color:#3b2230;font-family:var(--serif);font-size:18px;line-height:1.7}
+.paper .sign{font-family:var(--script);font-size:38px;color:#a0466a;margin:.2em 0 .5em;line-height:1}
+
+/* ---------- moods ---------- */
+.moods{display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:26rem;margin:1.4em 0}
+.moods button{padding:18px 14px;border-radius:16px;border:1px solid #ffffff33;background:#ffffff10;text-align:left;transition:background .25s,transform .2s;line-height:1.3}
+.moods button:hover{background:#ffffff22}
+.moods button:active{transform:scale(.96)}
+.moods button[aria-pressed="true"]{background:var(--cream);color:#2a1424;border-color:transparent}
+.message{min-height:7.5em;max-width:28rem;font-family:var(--serif);font-style:italic;font-weight:300;font-size:clamp(22px,2.3vw,28px);line-height:1.4;color:var(--cream)}
+
+/* ---------- dreams checklist ---------- */
+.dreams{list-style:none;padding:0;margin:1.4em 0 1.8em}
+.dreams li{border-top:1px solid #ffffff26}
+.dreams li:last-child{border-bottom:1px solid #ffffff26}
+.dreams label{display:flex;gap:14px;align-items:center;padding:15px 0;cursor:pointer;font-size:17px}
+.dreams input{appearance:none;-webkit-appearance:none;flex:none;width:22px;height:22px;border-radius:50%;border:1.5px solid #ffffff77;display:grid;place-items:center;margin:0;transition:background .25s,border-color .25s}
+.dreams input:checked{background:var(--rose);border-color:var(--rose)}
+.dreams input:checked:after{content:'♥';color:#2a1424;font-size:11px;line-height:1}
+.dreams input:checked+span{color:#f6e6e0a0;text-decoration:line-through;text-decoration-color:#ffffff55}
+.final-name{font-family:var(--script);font-size:clamp(52px,7vw,92px);line-height:1;color:var(--accent);margin:.5em 0 .1em}
+
+/* ---------- intro gate ---------- */
+#intro{position:fixed;inset:0;z-index:200;display:grid;place-items:center;padding:28px;text-align:center;background:linear-gradient(#0c0818b8,#0c0818f0),url('ceu.jpeg') center/cover;transition:opacity 1.3s ease,visibility 1.3s}
+#intro.gone{opacity:0;visibility:hidden;pointer-events:none}
+.gate{max-width:34rem;display:grid;gap:18px;justify-items:center}
+.gate .k{font-size:14px;color:#f6e6e0c0}
+.gate h2{font-style:italic;font-weight:300;font-size:clamp(56px,12vw,120px);letter-spacing:-.04em;margin:0}
+.gate p{text-align:center;margin:0;max-width:26rem}
+#heartCanvas{position:fixed;inset:0;z-index:300;pointer-events:none;width:100%;height:100%}
+#toast{position:fixed;z-index:250;left:50%;bottom:22px;transform:translate(-50%,24px);background:#21172eee;border:1px solid #ffffff44;border-radius:14px;padding:12px 18px;font-size:14px;opacity:0;pointer-events:none;transition:.35s;max-width:90vw;text-align:center}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* ---------- mobile: photo becomes full-bleed backdrop ---------- */
+@media (max-width:899px){
+  .stage{inset:0;width:100%}
+  .frame{width:100%;height:100%;border-radius:0;box-shadow:none}
+  .frame:after{background:linear-gradient(180deg,#0a061822,#0a061800 25%,#0a0618b8 62%,#0a0618ee)}
+  .bar{background:linear-gradient(#0a0618dd,transparent)}
+  main{margin-left:0}
+  .ch{padding:14vh 24px 10vh;align-items:flex-end}
+  .hero{align-items:flex-end}
+  body{font-size:16.5px}
+  .mark{font-size:26px}
+  .music .lbl{display:none}
+  .music{padding:10px 12px}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .frame img{animation:none}
+  .rv{opacity:1;transition:none}
+  .name span{opacity:1;transform:none;filter:none;animation:none!important}
+  .music.on .eq i{animation:none;height:70%}
+}
+</style>
+</head>
+<body class="locked">
+<canvas id="heartCanvas" aria-hidden="true"></canvas>
+<div class="progress" id="progress"></div>
+
+<div id="intro">
+  <div class="gate">
+    <span class="k">Uma surpresa feita só pra você</span>
+    <h2>Hemilayne</h2>
+    <p>Amor, fiz uma coisinha pra você. Põe o som baixinho, ajeita o travesseiro e vem ver, tá?</p>
+    <button class="btn solid" id="startExperience">Abrir minha surpresa ♥</button>
+    <span class="hint">Vai tocar uma música. É a nossa.</span>
+  </div>
+</div>
+
+<div id="toast" role="status"></div>
+<audio id="audio" src="nossa-musica.mp3" loop preload="metadata" playsinline></audio>
+
+<header class="bar">
+  <a class="mark" href="#top" aria-label="Voltar ao início">Hemilayne ♡</a>
+  <button class="music" id="music" aria-label="Tocar música"><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span><span class="lbl" id="musicLabel">Ouvir nossa música</span></button>
+</header>
+
+<div class="stage" aria-hidden="true">
+  <div class="frame">
+    <img class="sun" src="pordosol.jpeg" alt="" style="object-position:center 60%">
+    <img class="night" src="ceu.jpeg" alt="" style="object-position:center 70%">
+  </div>
+</div>
+
+<main>
+
+<!-- 1 · abertura -->
+<section class="ch hero" id="top" data-sky="sun">
+  <div class="col">
+    <span class="script">Pra minha menina</span>
+    <h1><span class="name" aria-label="Hemilayne" id="heroName"></span></h1>
+    <p class="lead">Se eu pudesse, tava aí agora. Como ainda não dá, fiz esse cantinho pra você sentir um pouquinho do carinho que eu tenho por você.</p>
+    <button class="btn" id="begin">Começar a história ♡</button>
+    <div class="scrollcue">ou deslize devagar</div>
+  </div>
+</section>
+
+<!-- 2 · o que ela faz comigo -->
+<section class="ch" id="c2" data-sky="sun">
+  <div class="col rv">
+    <span class="script">Ei, Hemilayne...</span>
+    <h2>Você nem imagina <em>o bem que me faz.</em></h2>
+    <p>É engraçado, né? A gente tá longe pra caramba e, mesmo assim, você consegue mudar o meu dia só de aparecer uma mensagem sua. Eu rio sozinho olhando pro celular e nem ligo.</p>
+    <p>Às vezes fico pensando como seria ter você do meu lado. Olhar pra você, conversar besteira, ficar pertinho sem precisar de tela nenhuma no meio.</p>
+    <ul class="reasons">
+      <li><b>Suas mensagens</b><span>Chegam sempre na hora certa, e o dia melhora do nada.</span></li>
+      <li><b>Nossas conversas</b><span>Das sérias às mais bobas, eu gosto de todas.</span></li>
+      <li><b>Seu jeitinho</b><span>Eu gosto de você exatamente como você é. Não muda nada.</span></li>
+    </ul>
+  </div>
+</section>
+
+<!-- 3 · céu -->
+<section class="ch" id="c3" data-sky="night">
+  <div class="col rv">
+    <span class="script">Olha pro céu...</span>
+    <h2>Queria dividir <em>essa vista contigo.</em></h2>
+    <p class="lead">Imagina nós dois sentadinhos assim, sem pressa de nada.</p>
+    <p>Um dia a gente ainda vai viver isso, tá? Por enquanto, toda vez que bater saudade, olha pra cima. A gente tá sob o mesmo céu, e tem alguém aqui do outro lado querendo muito te dar um abraço.</p>
+    <p class="hint">Dica: quando o céu estiver estrelado, pensa em mim por um segundo. Eu vou estar pensando em você.</p>
+  </div>
+</section>
+
+<!-- 4 · nosso dia -->
+<section class="ch" id="c4" data-sky="night">
+  <div class="col rv">
+    <span class="script">O nosso comecinho</span>
+    <h2>Foi aqui que virou <em>a gente.</em></h2>
+    <p>Dia 8 de outubro de 2026. Você falou que aceitava namorar comigo e eu mandei um “Ebaaaa” na hora. Eu tava feliz demais, pô.</p>
+    <div class="big"><span id="dd">0</span><small id="ddLabel">dias</small></div>
+    <div class="sub" id="hms">00h 00min 00s</div>
+    <p class="hint">Contando desde 8/10/2026, às 19h29 (Brasília).</p>
+    <ol class="timeline" id="timeline" aria-label="Nossos próximos marcos"></ol>
+  </div>
+</section>
+
+<!-- 5 · calendário -->
+<section class="ch" id="c5" data-sky="night">
+  <div class="col rv">
+    <span class="script">Mais um dia contigo</span>
+    <h2>Todo dia 8 <em>é nosso.</em></h2>
+    <p>Esse calendário acompanha o dia de verdade. Todo dia 8, a partir de outubro, tem um coraçãozinho, porque foi o dia do nosso sim.</p>
+    <div class="calendar">
+      <div class="calhead"><button id="prev" aria-label="Mês anterior">‹</button><strong id="month"></strong><button id="next" aria-label="Próximo mês">›</button></div>
+      <div class="days" id="days"></div>
+      <div class="legend"><span><i style="background:var(--cream)"></i>Hoje</span><span><i style="box-shadow:inset 0 0 0 1.5px var(--rose)"></i>Nosso dia</span></div>
+    </div>
+    <p class="hint" id="today" style="margin-top:14px"></p>
+    <button class="btn" id="reset">Voltar pra hoje ♡</button>
+  </div>
+</section>
+
+<!-- 6 · promessas -->
+<section class="ch" id="c6" data-sky="night">
+  <div class="col rv">
+    <span class="script">Do fundo do coração</span>
+    <h2>O que eu quero <em>te prometer.</em></h2>
+    <p>Eu não sei prometer o mundo, mas sei prometer o que está ao meu alcance.</p>
+    <ul class="promises">
+      <li><h3>Estar presente</h3><p>Mesmo com a distância, eu quero estar na sua vida de verdade, nos dias bons e nos difíceis.</p></li>
+      <li><h3>Te ouvir</h3><p>Quando você precisar desabafar, eu escuto sem pressa e sem julgar.</p></li>
+      <li><h3>Te respeitar</h3><p>Do seu tempo, do seu espaço e do seu jeitinho. Amor é cuidado, e eu quero cuidar.</p></li>
+      <li><h3>Fazer dar certo</h3><p>Com paciência e com vontade. A gente constrói isso junto, um dia de cada vez.</p></li>
+    </ul>
+  </div>
+</section>
+
+<!-- 7 · versículos -->
+<section class="ch" id="c7" data-sky="night">
+  <div class="col rv">
+    <span class="script">Com fé e carinho</span>
+    <h2>Tem versículos que <em>me lembram nós dois.</em></h2>
+    <blockquote style="margin:0">
+      <p class="verse">“As muitas águas não podem apagar o amor.”</p>
+      <span class="cite">Cânticos 8:7</span>
+      <p class="verse">“O amor é paciente, o amor é bondoso.”</p>
+      <span class="cite">1 Coríntios 13:4</span>
+    </blockquote>
+    <p>É isso que eu quero com você, Hemilayne. Um carinho de verdade, com paciência, respeito e vontade de fazer dar certo.</p>
+  </div>
+</section>
+
+<!-- 8 · cartinha -->
+<section class="ch" id="c8" data-sky="night">
+  <div class="col rv">
+    <span class="script">Guardei isso pra você</span>
+    <h2>Abre quando <em>sentir saudade.</em></h2>
+    <button class="envelope" id="envelope" aria-expanded="false" aria-controls="letter"><span>pra você ♡</span></button>
+    <p class="hint" id="envHint">Toca no envelope pra abrir.</p>
+    <div class="letter" id="letter"><div>
+      <div class="paper">
+        <p>Hemilayne, amor,</p>
+        <p>Eu sei que um site não substitui um abraço, mas eu queria fazer alguma coisa diferente pra você. Algo que você pudesse abrir, em qualquer hora do dia, e lembrar que tem alguém aqui que gosta muito de você.</p>
+        <p>Eu gosto das nossas conversas, das nossas brincadeiras, até das besteirinhas. Gosto de você do jeitinho que você é. E mesmo com essa distância toda, eu quero estar presente, ser seu cantinho seguro e te fazer sorrir sempre que der.</p>
+        <p>Se um dia o dia pesar, lembra que você não está sozinha. Abre essa carta, respira fundo e pensa que alguém torce por você todos os dias.</p>
+        <p>Espero que um dia a gente olhe pra trás e ria de tanta saudade que passou. Te amo, minha menina.</p>
+        <div class="sign">Seu namorado</div>
+      </div>
+    </div></div>
+  </div>
+</section>
+
+<!-- 9 · humor -->
+<section class="ch" id="c9" data-sky="night">
+  <div class="col rv">
+    <span class="script">Vem cá, amor</span>
+    <h2>Como tá esse <em>coraçãozinho?</em></h2>
+    <p>Escolhe o que combina com agora. Deixei um carinho guardado pra cada jeito de estar.</p>
+    <div class="moods" id="moods">
+      <button data-mood="saudade" aria-pressed="false">♡ Tô com saudade</button>
+      <button data-mood="triste" aria-pressed="false">☁ Tô tristinha</button>
+      <button data-mood="feliz" aria-pressed="false">✧ Tô feliz</button>
+      <button data-mood="carinho" aria-pressed="false">♥ Quero carinho</button>
+    </div>
+    <div class="message" id="message" aria-live="polite">Toca em uma opção. Se quiser outro carinho, toca de novo.</div>
+  </div>
+</section>
+
+<!-- 10 · futuro -->
+<section class="ch" id="c10" data-sky="sun">
+  <div class="col rv">
+    <span class="script">Eu e você</span>
+    <h2>Um dia vai ser <em>de verdade.</em></h2>
+    <p>Um dia vai ser nós dois vendo o pôr do sol juntinhos, sem celular no meio, sem despedida por mensagem. Só eu e você.</p>
+    <p class="hint" style="margin-bottom:0">Nossa lista de coisas pra fazer juntos. Marca quando você estiver pronta, que a gente vai cumprindo.</p>
+    <ul class="dreams" id="dreams">
+      <li><label><input type="checkbox" data-k="abraco"><span>Dar aquele abraço apertado que a gente tanto espera</span></label></li>
+      <li><label><input type="checkbox" data-k="sol"><span>Ver o pôr do sol juntinhos</span></label></li>
+      <li><label><input type="checkbox" data-k="estrelas"><span>Olhar as estrelas sem pressa</span></label></li>
+      <li><label><input type="checkbox" data-k="comer"><span>Comer algo gostoso, só nós dois</span></label></li>
+      <li><label><input type="checkbox" data-k="foto"><span>Tirar nossa primeira foto juntos</span></label></li>
+    </ul>
+    <div class="final-name">Hemilayne,</div>
+    <p class="lead">fica comigo, tá? Porque eu quero muito viver tudo isso contigo. Te amo, minha dona. 🤍</p>
+    <button class="btn" id="restart">Ver tudo de novo ↺</button>
+  </div>
+</section>
+
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const audio=$('audio'); audio.volume=.22;
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* name letters */
+$('heroName').innerHTML=[...'Hemilayne'].map((c,i)=>`<span style="--i:${i}" aria-hidden="true">${c}</span>`).join('');
+
+/* toast */
+let tt; function toast(t){const e=$('toast');e.textContent=t;e.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>e.classList.remove('show'),3800)}
+
+/* music */
+function setMusic(on){ $('music').classList.toggle('on',on); $('musicLabel').textContent=on?'Pausar música':'Ouvir nossa música'; $('music').setAttribute('aria-label',on?'Pausar música':'Tocar música') }
+async function play(){ try{await audio.play()}catch(e){toast('Toque em “Ouvir nossa música” para ativar o som.')} }
+$('music').onclick=()=>{ audio.paused?play():audio.pause() };
+audio.addEventListener('playing',()=>setMusic(true));
+audio.addEventListener('pause',()=>setMusic(false));
+audio.addEventListener('error',()=>toast('Não foi possível carregar a música. Abra a pasta completa.'));
+
+/* intro */
+$('startExperience').onclick=()=>{
+  heartBurst(innerWidth/2,innerHeight/2,60);
+  $('intro').classList.add('gone'); document.body.classList.remove('locked'); document.body.classList.add('go');
+  play(); setTimeout(()=>$('intro').remove(),1500);
+};
+$('begin').onclick=()=>{ if(audio.paused)play(); $('c2').scrollIntoView({behavior:reduce?'auto':'smooth'}) };
+$('restart').onclick=()=>scrollTo({top:0,behavior:reduce?'auto':'smooth'});
+
+/* sky (photo + palette) follows the section in view */
+const sky=new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting) document.documentElement.dataset.sky=e.target.dataset.sky }),{rootMargin:'-45% 0px -45% 0px'});
+document.querySelectorAll('[data-sky]').forEach(s=>sky.observe(s));
+
+/* reveal */
+const rv=new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting){e.target.classList.add('in');rv.unobserve(e.target)} }),{threshold:.12});
+document.querySelectorAll('.rv').forEach(el=>rv.observe(el));
+
+/* progress */
+let sched=false; addEventListener('scroll',()=>{ if(sched)return; sched=true; requestAnimationFrame(()=>{ const m=document.documentElement.scrollHeight-innerHeight; $('progress').style.width=(m?scrollY/m*100:0)+'%'; sched=false }) },{passive:true});
+
+/* counter + milestones */
+const start=new Date('2026-10-08T19:29:00-03:00');
+const addDays=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
+const addMonths=(d,n)=>{const x=new Date(d);x.setMonth(x.getMonth()+n);return x};
+const marks=[['Uma semana juntos',addDays(start,7)],['Nosso primeiro mês',addMonths(start,1)],['50 dias de nós',addDays(start,50)],['100 dias de nós',addDays(start,100)],['Seis meses',addMonths(start,6)],['Nosso primeiro ano',addMonths(start,12)]];
+const fmt=d=>new Intl.DateTimeFormat('pt-BR',{day:'numeric',month:'long',year:'numeric'}).format(d);
+function tick(){
+  const now=Date.now(), n=Math.max(0,Math.floor((now-start)/1000)), d=Math.floor(n/86400);
+  $('dd').textContent=d; $('ddLabel').textContent=d===1?'dia':'dias';
+  const p=v=>String(v).padStart(2,'0');
+  $('hms').textContent=`e ${p(Math.floor(n%86400/3600))}h ${p(Math.floor(n%3600/60))}min ${p(n%60)}s de amor`;
+  let nextFound=false;
+  $('timeline').innerHTML=marks.map(([t,dt])=>{
+    const done=dt<=now; let cls='',info=fmt(dt);
+    if(done)cls='done'; else if(!nextFound){nextFound=true;cls='next';const left=Math.ceil((dt-now)/864e5);info+=` · falta${left===1?'':'m'} ${left} dia${left===1?'':'s'}`}
+    return `<li class="${cls}"><b>${t}</b><span>${info}</span></li>`}).join('');
+}
+tick(); setInterval(tick,1000);
+
+/* calendar */
+let view=new Date(); view.setDate(1);
+function cal(){
+  const now=new Date(), y=view.getFullYear(), m=view.getMonth(), box=$('days');
+  $('month').textContent=new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric'}).format(view);
+  box.replaceChildren();
+  ['D','S','T','Q','Q','S','S'].forEach(w=>{const e=document.createElement('span');e.className='wd';e.textContent=w;box.append(e)});
+  for(let i=0;i<new Date(y,m,1).getDay();i++)box.append(document.createElement('span'));
+  for(let d=1;d<=new Date(y,m+1,0).getDate();d++){
+    const e=document.createElement('span'); e.textContent=d;
+    if(y===now.getFullYear()&&m===now.getMonth()&&d===now.getDate())e.classList.add('today');
+    if(d===8&&(y>2026||(y===2026&&m>=9))){e.classList.add('special');e.title='Nosso dia ♡'}
+    box.append(e)
+  }
+  $('today').textContent='Hoje é '+new Intl.DateTimeFormat('pt-BR',{dateStyle:'full'}).format(now)+' ♡';
+}
+$('prev').onclick=()=>{view.setMonth(view.getMonth()-1);cal()};
+$('next').onclick=()=>{view.setMonth(view.getMonth()+1);cal()};
+$('reset').onclick=()=>{view=new Date();view.setDate(1);cal()};
+cal(); let lastDay=new Date().toDateString();
+setInterval(()=>{const n=new Date().toDateString(); if(n!==lastDay){lastDay=n;view=new Date();view.setDate(1);cal()}},15000);
+
+/* envelope */
+$('envelope').onclick=()=>{
+  const open=$('letter').classList.toggle('open'); $('envelope').classList.toggle('open',open);
+  $('envelope').setAttribute('aria-expanded',String(open));
+  $('envelope').querySelector('span').textContent=open?'com amor ♡':'pra você ♡';
+  $('envHint').textContent=open?'Pode ler com calma. Toca de novo pra fechar.':'Toca no envelope pra abrir.';
+  if(open)setTimeout(()=>$('letter').scrollIntoView({behavior:reduce?'auto':'smooth',block:'nearest'}),400);
+};
+
+/* moods */
+const msgs={
+  saudade:['Ah, amor... eu também queria tanto tá aí contigo agora. Se eu pudesse, te puxava pra um abraço bem apertado e não soltava tão cedo.','Saudade é só o amor sem ter pra onde ir. Guarda ela aí, que a gente vai gastar tudo junto quando se encontrar.','Fecha o olho um segundinho e imagina meu abraço. Tô mandando agora, pode sentir.'],
+  triste:['Ei, minha menina, me conta o que aconteceu, tá? Não precisa guardar tudo pra você. Eu quero te ouvir até nos dias difíceis.','Dia ruim não define você. Respira, toma uma água, e lembra que eu tô aqui, do seu lado, mesmo de longe.','Você é mais forte do que imagina, e mesmo quando não for, tem alguém pra segurar sua mão. Pode contar comigo.'],
+  feliz:['Aaaaa, então sorri muito, amor! Saber que você tá bem já me deixa todo feliz aqui também.','Que bom ver você feliz! Esse seu sorriso, mesmo que eu só imagine daqui, ilumina meu dia inteiro.','Guarda esse momento. E depois me conta tudo, quero saber cada detalhe da sua felicidade.'],
+  carinho:['Vem cá, meu bem. Imagina eu fazendo carinho no seu cabelo e te dando um monte de beijinho na testa. Guarda esse abraço pra quando a gente se encontrar.','Hoje o dia é seu: você merece colo, cafuné e um monte de mimo. Eu te dou tudo isso assim que der.','Sou todo seu, Hemilayne. Só pedir que eu mando carinho, mesmo que seja só em palavras por enquanto.']
+};
+const idx={};
+document.querySelectorAll('[data-mood]').forEach(b=>b.onclick=()=>{
+  const k=b.dataset.mood; idx[k]=((idx[k]??-1)+1)%msgs[k].length;
+  document.querySelectorAll('[data-mood]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
+  const el=$('message'); el.textContent=msgs[k][idx[k]];
+  if(!reduce)el.animate([{opacity:0},{opacity:1}],{duration:700,easing:'ease-out'});
+});
+
+/* dreams checklist (remembered on this device) */
+const store={get(){try{return JSON.parse(localStorage.getItem('hemi-dreams')||'{}')}catch(e){return {}}},set(v){try{localStorage.setItem('hemi-dreams',JSON.stringify(v))}catch(e){}}};
+const saved=store.get();
+document.querySelectorAll('#dreams input').forEach(i=>{
+  i.checked=!!saved[i.dataset.k];
+  i.onchange=()=>{const s=store.get();s[i.dataset.k]=i.checked;store.set(s); if(i.checked){const r=i.getBoundingClientRect();heartBurst(r.left+11,r.top+11,14)}};
+});
+
+/* hearts on tap */
+let particles=[],heartBurst=()=>{};
+(()=>{
+  const c=$('heartCanvas'),ctx=c.getContext('2d'); let running=false;
+  function resize(){const r=devicePixelRatio||1;c.width=innerWidth*r;c.height=innerHeight*r;ctx.setTransform(r,0,0,r,0,0)}
+  addEventListener('resize',resize); resize();
+  heartBurst=(x,y,n=12)=>{ if(reduce)return;
+    for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,v=1.4+Math.random()*3.6;particles.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v-2,life:1,size:9+Math.random()*15,c:Math.random()>.5?'#f3a6b8':'#fbefe4'})}
+    if(!running){running=true;requestAnimationFrame(frame)}};
+  function frame(){
+    ctx.clearRect(0,0,innerWidth,innerHeight);
+    particles=particles.filter(p=>p.life>0);
+    for(const p of particles){p.x+=p.vx;p.y+=p.vy;p.vy+=.06;p.life-=.017;ctx.globalAlpha=Math.max(0,p.life);ctx.fillStyle=p.c;ctx.font=p.size+'px serif';ctx.fillText('♥',p.x,p.y)}
+    ctx.globalAlpha=1;
+    if(particles.length)requestAnimationFrame(frame);else running=false;
+  }
+})();
+document.addEventListener('pointerdown',e=>heartBurst(e.clientX,e.clientY,10),{passive:true});
+</script>
+</body>
+</html>
