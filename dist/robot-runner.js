@@ -40,12 +40,9 @@ export class Robot {
         };
     }
     levelScore() {
-        // Alta: 3 points above break-even; Média: break-even; Baixa: not a loser in history.
-        return this.level === "alta"
-            ? this.breakEven + 0.03
-            : this.level === "media"
-                ? this.breakEven
-                : 0.5;
+        // Precision-first: no operating mode may admit a setup measured below 70%.
+        // "Alta" is stricter; the other modes keep 70% as the hard floor.
+        return this.level === "alta" ? 0.75 : 0.7;
     }
     setLevel(level) {
         this.level = level;
@@ -216,11 +213,18 @@ export class Robot {
         void (async () => {
             try {
                 const review = await this.ai.review(read, pick, closed);
-                if (review && !review.enter) {
+                // Precision-first: the AI is a veto/confirmation layer, never a source of
+                // direction. When enabled, an uncertain review must not silently become an
+                // entry just because the model said ENTRAR.
+                if (review && (!review.enter || review.confidence < 75)) {
+                    const why = !review.enter
+                        ? `IA vetou a entrada: ${review.reason}`
+                        : `IA sem confiança suficiente (${review.confidence}% < 75%): ${review.reason}`;
                     this.reads.set(symbol, {
                         ...read,
-                        why: `IA vetou a entrada: ${review.reason}`,
-                        lines: [...read.lines, `IA vetou: ${review.reason}`],
+                        pick: null,
+                        why,
+                        lines: [...read.lines, why],
                     });
                     return;
                 }

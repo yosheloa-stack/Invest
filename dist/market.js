@@ -2,7 +2,7 @@ import WebSocket from "ws";
 import { websocketAgent } from "./network.js";
 import { EventEmitter } from "node:events";
 import { config, isFx, staleMs, symbols, fxPollMs } from "./config.js";
-import { combine, fillGaps, yahooChart } from "./fx.js";
+import { combine, fillGaps, twelveFxSymbol, yahooChart } from "./fx.js";
 import { INTERVALS } from "./types.js";
 import { log } from "./log.js";
 const HOT_FX_MS = 2000;
@@ -77,6 +77,9 @@ export function freezeMarketState(s) {
         quote: s.quote && { ...s.quote },
         book: s.book && { ...s.book },
         trades: s.trades.slice(),
+        // Candle arrays are replaced (never mutated) when a bar closes, so retaining
+        // their current references gives a stable point-in-time view without copying
+        // hundreds of thousands of references every second.
         candles: c,
         lastKline: { ...s.lastKline },
     };
@@ -129,6 +132,8 @@ export class MarketData extends EventEmitter {
     states = new Map();
     sockets = new Map();
     timers = new Set();
+    fxStream;
+    fxStreamSymbols = new Map();
     stopped = false;
     syncTimer;
     // Symbols on someone's screen or with an open robot trade.
@@ -159,11 +164,26 @@ export class MarketData extends EventEmitter {
             log.error({ err: e }, "clock sync");
         }
         let fx = 0;
+        const realtimeFx = new Set();
+        if (config.TWELVE_DATA_API_KEY) {
+            for (const s of this.states.values()) {
+                const provider = twelveFxSymbol(s.symbol);
+                if (provider) {
+                    realtimeFx.add(s.symbol);
+                    this.fxStreamSymbols.set(provider, s.symbol);
+                }
+            }
+        }
         for (const s of this.states.values())
-            if (isFx(s.symbol))
-                this.pollFx(s, fx++ * 900);
+            if (isFx(s.symbol)) {
+                // Bootstrap all non-crypto instruments from Yahoo. True FX pairs then
+                // receive live ticks from Twelve Data instead of waiting for Yahoo polls.
+                this.pollFx(s, fx++ * 900, realtimeFx.has(s.symbol));
+            }
             else
                 this.connect(s, 0);
+        if (realtimeFx.size)
+            this.connectFxStream();
         this.syncTimer = setInterval(() => void this.rest.sync().catch((e) => {
             this.rest.uncertainty = Infinity;
             log.error({ err: e }, "clock sync");
@@ -414,7 +434,7 @@ export class MarketData extends EventEmitter {
         }
     }
     // Forex: Yahoo Finance is polled; the state mimics a feed without volume or book.
-    pollFx(s, wait) {
+    pollFx(s, wait, streaming = false) {
         const timer = setTimeout(async () => {
             this.timers.delete(timer);
             if (this.stopped)
@@ -427,18 +447,118 @@ export class MarketData extends EventEmitter {
                     s.ready = true;
                     log.info({ symbol: s.symbol }, "forex pronto");
                 }
-                await this.tickFx(s);
+                await this.tickFx(s, streaming);
                 s.error = null;
             }
             catch (e) {
                 s.error = "ERRO NA FONTE FOREX";
                 log.warn({ err: e, symbol: s.symbol }, "forex");
             }
-            // With ~34 Yahoo assets each one is read every ~17 s; the pair someone is looking at
-            // (or trading) is read every 2 s so its chart keeps up with the market.
-            this.pollFx(s, this.hot.has(s.symbol) ? HOT_FX_MS : fxPollMs);
+            // Streaming Forex needs Yahoo only as a periodic reconciliation/history source.
+            // Other Yahoo instruments keep the existing polling path.
+            this.pollFx(s, streaming ? 60000 : this.hot.has(s.symbol) ? HOT_FX_MS : fxPollMs, streaming);
         }, wait);
         this.timers.add(timer);
+    }
+    connectFxStream(attempt = 0) {
+        if (this.stopped || !config.TWELVE_DATA_API_KEY || !this.fxStreamSymbols.size)
+            return;
+        const ws = new WebSocket(`wss://ws.twelvedata.com/v1/quotes/price?apikey=${encodeURIComponent(config.TWELVE_DATA_API_KEY)}`);
+        this.fxStream = ws;
+        let opened = false;
+        ws.on("open", () => {
+            opened = true;
+            const symbols = [...this.fxStreamSymbols.keys()].join(",");
+            ws.send(JSON.stringify({ action: "subscribe", params: { symbols } }));
+            log.info({ symbols: this.fxStreamSymbols.size }, "forex realtime conectado");
+        });
+        ws.on("message", (raw) => {
+            try {
+                const msg = JSON.parse(raw.toString());
+                if (msg.event !== "price" || !msg.symbol)
+                    return;
+                const local = this.fxStreamSymbols.get(msg.symbol);
+                if (!local)
+                    return;
+                const s = this.states.get(local);
+                const p = Number(msg.price);
+                if (!s || !Number.isFinite(p) || p <= 0)
+                    return;
+                const now = msg.timestamp ? msg.timestamp * 1000 : this.rest.now();
+                this.applyFxTick(s, p, now);
+            }
+            catch (e) {
+                log.debug({ err: e }, "forex tick inválido");
+            }
+        });
+        const reconnect = () => {
+            if (this.fxStream === ws)
+                this.fxStream = undefined;
+            if (this.stopped)
+                return;
+            const next = opened ? 0 : attempt + 1;
+            const wait = Math.min(30000, 1000 * 2 ** Math.min(next, 5));
+            const timer = setTimeout(() => {
+                this.timers.delete(timer);
+                this.connectFxStream(next);
+            }, wait);
+            this.timers.add(timer);
+        };
+        ws.on("close", reconnect);
+        ws.on("error", (e) => log.warn({ err: e }, "forex realtime"));
+    }
+    applyFxTick(s, p, at) {
+        const minute = Math.floor(at / 60000) * 60000;
+        const current = s.forming;
+        if (!current || current.t !== minute) {
+            // Finalize the previous live minute before starting the new one.
+            if (current && current.t < minute) {
+                const closed = { ...current, end: current.t + 59999 };
+                s.candles["1m"] = putCandle(s.candles["1m"], closed);
+                this.emit("candles", s.symbol, "1m", [closed]);
+            }
+            s.forming = {
+                t: minute,
+                end: minute + 59999,
+                o: p,
+                h: p,
+                l: p,
+                c: p,
+                v: 1,
+                buy: 0.5,
+                quote: 0,
+            };
+        }
+        else {
+            s.forming = {
+                ...current,
+                h: Math.max(current.h, p),
+                l: Math.min(current.l, p),
+                c: p,
+                v: current.v + 1,
+            };
+        }
+        s.formingAt = at;
+        s.trade = {
+            id: (s.trade?.id ?? 0) + 1,
+            t: at,
+            received: this.rest.now(),
+            p,
+            q: 0,
+            buy: true,
+        };
+        s.quote = { t: at, bid: p, ask: p };
+        s.book = {
+            t: at,
+            id: (s.book?.id ?? 0) + 1,
+            bidQty: 1,
+            askQty: 1,
+            imbalance: 0,
+            change: 0,
+        };
+        s.lastKline["1m"] = at;
+        s.connected = true;
+        s.error = null;
     }
     async bootstrapFx(s) {
         const now = this.rest.now(), back = { "1m": 3, "5m": 8, "15m": 20, "1h": 70 };
@@ -452,7 +572,7 @@ export class MarketData extends EventEmitter {
             this.emit("candles", s.symbol, tf, closed);
         }
     }
-    async tickFx(s) {
+    async tickFx(s, streaming = false) {
         const now = this.rest.now(), { price, bars } = await yahooChart(s.symbol, "1m", now - 20 * 60000, now), last = bars[bars.length - 1];
         if (!last)
             throw Error("Forex sem candles recentes");
@@ -477,32 +597,36 @@ export class MarketData extends EventEmitter {
         s.lastKline["1m"] = now;
         // A stale quote (market closed) keeps its own timestamp so the feed shows as late.
         const p = price ?? last.c, at = last.t >= now - 3 * 60000 ? now : last.end;
-        if (last.end >= now) {
-            s.forming = {
-                ...last,
-                c: p,
-                h: Math.max(last.h, p),
-                l: Math.min(last.l, p),
+        // Never mix a delayed Yahoo forming bar/quote into a realtime FX candle.
+        // Doing that can move O/H/L/C backwards and produces clipped/deformed candles.
+        if (!streaming) {
+            if (last.end >= now) {
+                s.forming = {
+                    ...last,
+                    c: p,
+                    h: Math.max(last.h, p),
+                    l: Math.min(last.l, p),
+                };
+                s.formingAt = now;
+            }
+            s.trade = {
+                id: (s.trade?.id ?? 0) + 1,
+                t: at,
+                received: at,
+                p,
+                q: 0,
+                buy: true,
             };
-            s.formingAt = now;
+            s.quote = { t: at, bid: p, ask: p };
+            s.book = {
+                t: at,
+                id: (s.book?.id ?? 0) + 1,
+                bidQty: 1,
+                askQty: 1,
+                imbalance: 0,
+                change: 0,
+            };
         }
-        s.trade = {
-            id: (s.trade?.id ?? 0) + 1,
-            t: at,
-            received: at,
-            p,
-            q: 0,
-            buy: true,
-        };
-        s.quote = { t: at, bid: p, ask: p };
-        s.book = {
-            t: at,
-            id: (s.book?.id ?? 0) + 1,
-            bidQty: 1,
-            askQty: 1,
-            imbalance: 0,
-            change: 0,
-        };
     }
     stop() {
         this.stopped = true;
@@ -511,5 +635,6 @@ export class MarketData extends EventEmitter {
             clearTimeout(t);
         for (const ws of this.sockets.values())
             ws.close();
+        this.fxStream?.close();
     }
 }

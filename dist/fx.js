@@ -121,3 +121,6 @@ export async function yahooHistory(symbol, from, now) {
         .sort((a, b) => a.t - b.t);
     return fillGaps(closed, 60000);
 }
+// Twelve Data uses slash-separated Forex pairs (EUR/USD). Keep the conversion
+// here so MarketData does not need provider-specific symbol knowledge.
+export const twelveFxSymbol = (symbol) => /^[A-Z]{6}$/.test(symbol) ? `${symbol.slice(0, 3)}/${symbol.slice(3)}` : null;

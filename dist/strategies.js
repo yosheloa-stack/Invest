@@ -214,6 +214,34 @@ export function both(family, key, label, base) {
     ];
 }
 export function catalog() {
+    // Precision-first catalog: candle/price-action patterns plus structural chart
+    // patterns. Generic indicator-only systems were intentionally removed.
+    // Indicators still exist inside buildSeries only as confirmation/context; they
+    // are not allowed to originate a trade by themselves.
+    const out = [];
+    out.push(...binaryStrategies());
+    out.push(...structuralStrategies());
+    return out.map((spec) => ({
+        ...spec,
+        id: spec.id.includes(":ctx2")
+            ? spec.id
+            : spec.id.replace(/:(seguir|reverter)$/, ":ctx2:$1"),
+        signal: (s, i) => {
+            const d = spec.signal(s, i);
+            if (!d)
+                return 0;
+            // Never allow a candle pattern to fight a confirmed price trend.
+            // Structural patterns already encode their own regime.
+            if (!["lateral", "estrutura", "fibonacci"].includes(spec.family)) {
+                const x = priceContext(s, i);
+                if (x.trend && x.trend !== d)
+                    return 0;
+            }
+            return contextAllows(s, i, d) ? d : 0;
+        },
+    }));
+}
+function legacyCatalogUnused() {
     const out = [];
     for (const n of [7, 14])
         for (const lv of [20, 25, 30])
@@ -433,9 +461,11 @@ export function evaluateSymbol(symbol, s, horizons, o, specs = catalog()) {
                     ? wr > o.breakEven
                         ? "ACIMA DO BREAK-EVEN, MAS SEM SIGNIFICÂNCIA ESTATÍSTICA"
                         : "ABAIXO DO BREAK-EVEN FORA DA AMOSTRA"
-                    : r.halves.some((x) => (x.winRate ?? 0) <= o.breakEven)
-                        ? "INSTÁVEL: UMA METADE DO TESTE FICOU ABAIXO DO BREAK-EVEN"
-                        : "APROVADA";
+                    : wr < 0.7
+                        ? `ACERTO FORA DA AMOSTRA ABAIXO DE 70% (${(wr * 100).toFixed(1)}%)`
+                        : r.halves.some((x) => (x.winRate ?? 0) < 0.65)
+                            ? "INSTÁVEL: UMA METADE DO TESTE FICOU ABAIXO DE 65%"
+                            : "APROVADA";
             out.push({
                 symbol,
                 horizon: h,

@@ -1,0 +1,11 @@
+const [major, minor] = process.versions.node.split(".").map(Number);
+if (major < 22 || (major === 22 && minor < 16)) throw Error("Use Node.js 22.16+ ou 24+");
+import { existsSync } from "node:fs";
+import { loadEnvFile } from "node:process";
+import { fileURLToPath } from "node:url";
+process.chdir(fileURLToPath(new URL(".", import.meta.url)));
+if (existsSync(".env")) loadEnvFile(".env");
+if (!process.env.QUOTEX_EMAIL?.trim()) throw Error("Configure QUOTEX_EMAIL nas variáveis da Square Cloud");
+if (!process.env.QUOTEX_PASSWORD?.trim()) throw Error("Configure QUOTEX_PASSWORD nas variáveis da Square Cloud");
+process.env.NODE_ENV = "production";
+await import("./dist/quotex-bot.js");

@@ -666,3 +666,41 @@ async function shutdown() {
 }
 process.on("SIGINT", () => void shutdown());
 process.on("SIGTERM", () => void shutdown());
+// --- Quotex bot (starts only when QUOTEX_EMAIL is set) ---
+if (process.env.QUOTEX_EMAIL && process.env.QUOTEX_PASSWORD) {
+    import("./quotex/bot.js").then(({ QuotexBot }) => {
+        import("./quotex/types.js").then(({ DEFAULT_CONFIG }) => {
+            const qcfg = {
+                ...DEFAULT_CONFIG,
+                email: process.env.QUOTEX_EMAIL,
+                password: process.env.QUOTEX_PASSWORD,
+                ssid: process.env.QUOTEX_SSID || undefined,
+                host: process.env.QUOTEX_HOST || DEFAULT_CONFIG.host,
+                isDemo: process.env.QUOTEX_DEMO !== "false",
+                minPayout: parseFloat(process.env.QUOTEX_MIN_PAYOUT || "") ||
+                    DEFAULT_CONFIG.minPayout,
+                expiration: parseInt(process.env.QUOTEX_EXPIRATION || "") ||
+                    DEFAULT_CONFIG.expiration,
+                startBalance: parseFloat(process.env.QUOTEX_START_BALANCE || "") ||
+                    DEFAULT_CONFIG.startBalance,
+                targetBalance: parseFloat(process.env.QUOTEX_TARGET_BALANCE || "") ||
+                    DEFAULT_CONFIG.targetBalance,
+                maxStakePct: parseFloat(process.env.QUOTEX_MAX_STAKE_PCT || "") ||
+                    DEFAULT_CONFIG.maxStakePct,
+                minStake: parseFloat(process.env.QUOTEX_MIN_STAKE || "") ||
+                    DEFAULT_CONFIG.minStake,
+                minConfluence: parseInt(process.env.QUOTEX_MIN_CONFLUENCE || "") ||
+                    DEFAULT_CONFIG.minConfluence,
+                cooldownMs: parseInt(process.env.QUOTEX_COOLDOWN_MS || "") ||
+                    DEFAULT_CONFIG.cooldownMs,
+                maxConsecLosses: parseInt(process.env.QUOTEX_MAX_CONSEC_LOSSES || "") ||
+                    DEFAULT_CONFIG.maxConsecLosses,
+                dailyLossLimit: parseFloat(process.env.QUOTEX_DAILY_LOSS_LIMIT || "") ||
+                    DEFAULT_CONFIG.dailyLossLimit,
+            };
+            const qbot = new QuotexBot(qcfg);
+            log.info({ demo: qcfg.isDemo, target: qcfg.targetBalance }, "quotex-bot: iniciando junto com o scanner");
+            qbot.start().catch((e) => log.error({ err: e }, "quotex-bot: falha"));
+        });
+    });
+}

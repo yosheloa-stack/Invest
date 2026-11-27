@@ -1,7 +1,6 @@
-DISPLAY_NAME=Yosh Crypto Scanner
-MAIN=square-start.mjs
+DISPLAY_NAME=Yosh Quotex Bot
+MAIN=square-quotex.mjs
 RUNTIME=nodejs
 VERSION=recommended
-MEMORY=1024
+MEMORY=512
 AUTORESTART=true
-SUBDOMAIN=yosh-crypto-scanner
