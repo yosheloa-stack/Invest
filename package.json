@@ -7,7 +7,7 @@
     "dev": "node --import tsx --watch src/server.ts",
     "dev:web": "vite --host 0.0.0.0",
     "build": "tsc && vite build",
-    "start": "node square-start.mjs",
+    "start": "node square-quotex.mjs",
     "test": "node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "export": "node --import tsx scripts/export.ts",
