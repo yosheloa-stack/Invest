@@ -17,7 +17,6 @@ interface GotResponse {
   headers: Record<string, string | string[] | undefined>;
   body: string;
   url: string;
-  redirectUrls?: URL[];
 }
 
 type GotFn = (url: string, opts?: Record<string, any>) => Promise<GotResponse>;
@@ -26,15 +25,10 @@ let _gotScraping: GotFn | null = null;
 
 async function getGot(): Promise<GotFn> {
   if (_gotScraping) return _gotScraping;
-  try {
-    const mod = await import("got-scraping");
-    _gotScraping = mod.gotScraping as unknown as GotFn;
-    log.info("quotex: got-scraping loaded (Chrome TLS fingerprint)");
-    return _gotScraping;
-  } catch (err: any) {
-    log.warn({ err: err.message }, "quotex: got-scraping unavailable, falling back to fetch");
-    throw err;
-  }
+  const mod = await import("got-scraping");
+  _gotScraping = mod.gotScraping as unknown as GotFn;
+  log.info("quotex: got-scraping loaded (Chrome TLS fingerprint)");
+  return _gotScraping;
 }
 
 function extractSetCookies(headers: Record<string, string | string[] | undefined>): Map<string, string> {
@@ -45,9 +39,7 @@ function extractSetCookies(headers: Record<string, string | string[] | undefined
     const eq = c.indexOf("=");
     const semi = c.indexOf(";");
     if (eq > 0) {
-      const name = c.slice(0, eq).trim();
-      const val = c.slice(eq + 1, semi > 0 ? semi : undefined).trim();
-      jar.set(name, val);
+      jar.set(c.slice(0, eq).trim(), c.slice(eq + 1, semi > 0 ? semi : undefined).trim());
     }
   }
   return jar;
@@ -55,14 +47,11 @@ function extractSetCookies(headers: Record<string, string | string[] | undefined
 
 function extractCookies(headers: Headers): Map<string, string> {
   const jar = new Map<string, string>();
-  const raw = headers.getSetCookie?.() ?? [];
-  for (const c of raw) {
+  for (const c of headers.getSetCookie?.() ?? []) {
     const eq = c.indexOf("=");
     const semi = c.indexOf(";");
     if (eq > 0) {
-      const name = c.slice(0, eq).trim();
-      const val = c.slice(eq + 1, semi > 0 ? semi : undefined).trim();
-      jar.set(name, val);
+      jar.set(c.slice(0, eq).trim(), c.slice(eq + 1, semi > 0 ? semi : undefined).trim());
     }
   }
   return jar;
@@ -72,13 +61,14 @@ function cookieString(jar: Map<string, string>): string {
   return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
 }
 
-function browserHeaders(host: string, referer?: string): Record<string, string> {
+function navHeaders(host: string, referer?: string): Record<string, string> {
   return {
     "User-Agent": UA,
-    Accept:
-      "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
     "Accept-Encoding": "gzip, deflate, br",
+    "Upgrade-Insecure-Requests": "1",
+    "Cache-Control": "max-age=0",
     "Sec-Fetch-Dest": "document",
     "Sec-Fetch-Mode": "navigate",
     "Sec-Fetch-Site": referer ? "same-origin" : "none",
@@ -86,25 +76,33 @@ function browserHeaders(host: string, referer?: string): Record<string, string> 
     "Sec-CH-UA": '"Chromium";v="131", "Not_A Brand";v="24"',
     "Sec-CH-UA-Mobile": "?0",
     "Sec-CH-UA-Platform": '"Windows"',
-    Origin: `https://${host}`,
     ...(referer ? { Referer: referer } : {}),
   };
 }
 
+function formHeaders(host: string, referer: string): Record<string, string> {
+  return {
+    ...navHeaders(host, referer),
+    Origin: `https://${host}`,
+    "Content-Type": "application/x-www-form-urlencoded",
+    "Sec-Fetch-Dest": "iframe",
+  };
+}
+
 function findToken(html: string): string | null {
-  const m = html.match(/name="_token"\s+value="([^"]+)"/);
-  return m ? m[1] : null;
+  return html.match(/name="_token"\s+value="([^"]+)"/)?.[1] ?? null;
 }
 
 function findSettingsToken(html: string): string | null {
   const m = html.match(/window\.settings\s*=\s*(\{[^;]+\})/);
   if (!m) return null;
-  try {
-    const obj = JSON.parse(m[1]);
-    return obj.token || null;
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(m[1]).token || null; } catch { return null; }
+}
+
+function isCfChallenge(body: string, headers: Record<string, any>): boolean {
+  if (headers["cf-mitigated"] === "challenge") return true;
+  if (body.includes("Just a moment") && body.includes("cf-")) return true;
+  return false;
 }
 
 export async function loginHttp(
@@ -116,30 +114,30 @@ export async function loginHttp(
     ? [preferredHost, ...HOSTS.filter((h) => h !== preferredHost)]
     : HOSTS;
 
-  // Try got-scraping first (Chrome TLS fingerprint bypasses Cloudflare)
+  // Try got-scraping (Chrome TLS fingerprint)
   try {
     const got = await getGot();
     for (const host of hosts) {
-      log.info({ host }, "quotex: attempting login (got-scraping)");
+      log.info({ host }, "quotex: attempting login (got-scraping chrome120)");
       try {
         const result = await tryLoginGot(got, host, email, password);
         if (result) return result;
       } catch (err: any) {
-        log.warn({ host, err: err.message }, "quotex: got-scraping login failed");
+        log.warn({ host, err: err.message }, "quotex: got-scraping login error");
       }
     }
   } catch {
-    // got-scraping not available
+    log.warn("quotex: got-scraping not available");
   }
 
-  // Fallback to native fetch
+  // Fallback: native fetch
   for (const host of hosts) {
-    log.info({ host }, "quotex: attempting login (fetch fallback)");
+    log.info({ host }, "quotex: attempting login (fetch)");
     try {
       const result = await tryLoginFetch(host, email, password);
       if (result) return result;
     } catch (err: any) {
-      log.warn({ host, err: err.message }, "quotex: fetch login failed");
+      log.warn({ host, err: err.message }, "quotex: fetch login error");
     }
   }
   return null;
@@ -153,88 +151,80 @@ async function tryLoginGot(
 ): Promise<LoginResult | null> {
   const base = `https://${host}`;
   const jar = new Map<string, string>();
+  const gen = { browsers: [{ name: "chrome", minVersion: 120 }], operatingSystems: ["windows"] };
 
-  // Step 1: load sign-in page with Chrome TLS fingerprint
+  // Let got-scraping handle header generation for best fingerprint match
   const r1 = await got(`${base}/pt/sign-in`, {
-    headers: browserHeaders(host),
     followRedirect: false,
-    headerGeneratorOptions: { browsers: [{ name: "chrome", minVersion: 120 }], operatingSystems: ["windows"] },
+    headerGeneratorOptions: gen,
+    headers: { "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7" },
   });
   for (const [k, v] of extractSetCookies(r1.headers)) jar.set(k, v);
+  log.info({ host, status: r1.statusCode, cfChallenge: isCfChallenge(r1.body, r1.headers), bodyLen: r1.body.length }, "quotex: sign-in page response");
+
+  if (isCfChallenge(r1.body, r1.headers)) {
+    log.warn({ host }, "quotex: Cloudflare challenge detected — datacenter IP blocked");
+    return null;
+  }
 
   let token = findToken(r1.body);
   if (!token) {
-    // Try modal endpoint
     const r2 = await got(`${base}/sign-in/modal/`, {
-      headers: { ...browserHeaders(host, `${base}/pt/sign-in`), Cookie: cookieString(jar) },
+      headers: { ...navHeaders(host, `${base}/pt/sign-in`), Cookie: cookieString(jar) },
       followRedirect: false,
-      headerGeneratorOptions: { browsers: [{ name: "chrome", minVersion: 120 }], operatingSystems: ["windows"] },
+      headerGeneratorOptions: gen,
     });
     for (const [k, v] of extractSetCookies(r2.headers)) jar.set(k, v);
     token = findToken(r2.body);
+
+    if (!token && isCfChallenge(r2.body, r2.headers)) {
+      log.warn({ host }, "quotex: Cloudflare challenge on modal endpoint");
+      return null;
+    }
   }
 
   if (!token) {
-    log.warn({ host }, "quotex: CSRF token not found (got-scraping)");
+    log.warn({ host, snippet: r1.body.slice(0, 300) }, "quotex: CSRF token not found (got-scraping)");
     return null;
   }
   log.info({ host }, "quotex: CSRF token obtained");
 
-  // Step 2: POST login
-  const body = new URLSearchParams({
-    _token: token,
-    email,
-    password,
-    remember: "1",
-  });
+  const body = new URLSearchParams({ _token: token, email, password, remember: "1" });
 
   const r3 = await got(`${base}/sign-in`, {
     method: "POST",
-    headers: {
-      ...browserHeaders(host, `${base}/pt/sign-in`),
-      Cookie: cookieString(jar),
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
+    headers: { ...formHeaders(host, `${base}/pt/sign-in`), Cookie: cookieString(jar) },
     body: body.toString(),
     followRedirect: false,
-    headerGeneratorOptions: { browsers: [{ name: "chrome", minVersion: 120 }], operatingSystems: ["windows"] },
+    headerGeneratorOptions: gen,
   });
   for (const [k, v] of extractSetCookies(r3.headers)) jar.set(k, v);
 
-  // Step 3: follow redirects to get to the trade page
   let tradeHtml = r3.body;
   let location = typeof r3.headers.location === "string" ? r3.headers.location : null;
 
   for (let i = 0; i < 5 && location; i++) {
     const url = location.startsWith("http") ? location : `${base}${location}`;
     const rn = await got(url, {
-      headers: { ...browserHeaders(host, `${base}/pt/sign-in`), Cookie: cookieString(jar) },
+      headers: { ...navHeaders(host, `${base}/pt/sign-in`), Cookie: cookieString(jar) },
       followRedirect: false,
-      headerGeneratorOptions: { browsers: [{ name: "chrome", minVersion: 120 }], operatingSystems: ["windows"] },
+      headerGeneratorOptions: gen,
     });
     for (const [k, v] of extractSetCookies(rn.headers)) jar.set(k, v);
     tradeHtml = rn.body;
     location = typeof rn.headers.location === "string" ? rn.headers.location : null;
   }
 
-  // Step 4: extract SSID
   let ssid = findSettingsToken(tradeHtml);
 
   if (!ssid) {
     try {
       const rd = await got(`${base}/api/v1/cabinets/digest`, {
-        headers: {
-          ...browserHeaders(host, `${base}/pt`),
-          Cookie: cookieString(jar),
-          Accept: "application/json",
-        },
-        headerGeneratorOptions: { browsers: [{ name: "chrome", minVersion: 120 }], operatingSystems: ["windows"] },
+        headers: { ...navHeaders(host, `${base}/pt`), Cookie: cookieString(jar), Accept: "application/json" },
+        headerGeneratorOptions: gen,
       });
-      const digest = JSON.parse(rd.body);
-      ssid = digest?.data?.token || null;
-    } catch {
-      // ignore
-    }
+      ssid = JSON.parse(rd.body)?.data?.token || null;
+    } catch { /* ignore */ }
   }
 
   if (!ssid) {
@@ -254,98 +244,69 @@ async function tryLoginFetch(
   const base = `https://${host}`;
   const jar = new Map<string, string>();
 
-  const r1 = await fetch(`${base}/pt/sign-in`, {
-    headers: browserHeaders(host),
-    redirect: "manual",
-  });
+  const r1 = await fetch(`${base}/pt/sign-in`, { headers: navHeaders(host), redirect: "manual" });
   for (const [k, v] of extractCookies(r1.headers)) jar.set(k, v);
   const html1 = await r1.text();
+
+  if (html1.includes("Just a moment")) {
+    log.warn({ host }, "quotex: Cloudflare challenge (fetch)");
+    return null;
+  }
 
   let token = findToken(html1);
   if (!token) {
     const r2 = await fetch(`${base}/sign-in/modal/`, {
-      headers: { ...browserHeaders(host, `${base}/pt/sign-in`), Cookie: cookieString(jar) },
+      headers: { ...navHeaders(host, `${base}/pt/sign-in`), Cookie: cookieString(jar) },
     });
     for (const [k, v] of extractCookies(r2.headers)) jar.set(k, v);
-    const html2 = await r2.text();
-    token = findToken(html2);
+    token = findToken(await r2.text());
   }
 
   if (!token) {
-    log.warn({ host }, "quotex: CSRF token not found");
+    log.warn({ host }, "quotex: CSRF token not found (fetch)");
     return null;
   }
 
-  const body = new URLSearchParams({
-    _token: token,
-    email,
-    password,
-    remember: "1",
-  });
+  const body = new URLSearchParams({ _token: token, email, password, remember: "1" });
 
   const r3 = await fetch(`${base}/sign-in`, {
     method: "POST",
-    headers: {
-      ...browserHeaders(host, `${base}/pt/sign-in`),
-      Cookie: cookieString(jar),
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
+    headers: { ...formHeaders(host, `${base}/pt/sign-in`), Cookie: cookieString(jar) },
     body: body.toString(),
     redirect: "manual",
   });
   for (const [k, v] of extractCookies(r3.headers)) jar.set(k, v);
 
   let location = r3.headers.get("location");
-  let tradeHtml = "";
-  if (location) {
-    if (!location.startsWith("http")) location = `${base}${location}`;
-    const r4 = await fetch(location, {
-      headers: { ...browserHeaders(host, `${base}/pt/sign-in`), Cookie: cookieString(jar) },
+  let tradeHtml = location ? "" : await r3.text();
+  for (let i = 0; i < 5 && location; i++) {
+    const url = location.startsWith("http") ? location : `${base}${location}`;
+    const rn = await fetch(url, {
+      headers: { ...navHeaders(host, `${base}/pt`), Cookie: cookieString(jar) },
       redirect: "manual",
     });
-    for (const [k, v] of extractCookies(r4.headers)) jar.set(k, v);
-    tradeHtml = await r4.text();
-
-    const loc2 = r4.headers.get("location");
-    if (loc2) {
-      const full = loc2.startsWith("http") ? loc2 : `${base}${loc2}`;
-      const r5 = await fetch(full, {
-        headers: { ...browserHeaders(host, `${base}/pt`), Cookie: cookieString(jar) },
-        redirect: "manual",
-      });
-      for (const [k, v] of extractCookies(r5.headers)) jar.set(k, v);
-      tradeHtml = await r5.text();
-    }
-  } else {
-    tradeHtml = await r3.text();
+    for (const [k, v] of extractCookies(rn.headers)) jar.set(k, v);
+    tradeHtml = await rn.text();
+    location = rn.headers.get("location");
   }
 
   let ssid = findSettingsToken(tradeHtml);
 
   if (!ssid) {
     try {
-      const r6 = await fetch(`${base}/api/v1/cabinets/digest`, {
-        headers: {
-          ...browserHeaders(host, `${base}/pt`),
-          Cookie: cookieString(jar),
-          Accept: "application/json",
-        },
+      const rd = await fetch(`${base}/api/v1/cabinets/digest`, {
+        headers: { ...navHeaders(host, `${base}/pt`), Cookie: cookieString(jar), Accept: "application/json" },
       });
-      if (r6.ok) {
-        const digest = (await r6.json()) as any;
-        ssid = digest?.data?.token || null;
-      }
-    } catch {
-      // ignore
-    }
+      if (rd.ok) ssid = ((await rd.json()) as any)?.data?.token || null;
+    } catch { /* ignore */ }
   }
 
   if (!ssid) {
-    log.warn({ host }, "quotex: SSID not found after login");
+    log.warn({ host }, "quotex: SSID not found (fetch)");
     return null;
   }
 
-  log.info({ host }, "quotex: login successful");
+  log.info({ host }, "quotex: login successful (fetch)");
   return { ssid, cookies: cookieString(jar), userAgent: UA, host };
 }
 
